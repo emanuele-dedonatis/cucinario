@@ -182,11 +182,11 @@ const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
 let today=new Date(),thisMonday=mondayOf(today);
 
 /* ---------- Stato: copia locale (funziona offline) + sincronizzazione con PocketBase ----------
-   Collezioni sul server: plan (un record per giorno), shopping (uno per settimana: spunte e "a casa"),
+   Collezioni sul server: plan (un record per giorno), shopping (record unico "lista": spunte, "a casa", altro, pasti già comprati),
    settings (unico record: obiettivi, intervalli, orari), photos (una foto per ricetta), recipes, ingredients.
    Le modifiche vanno in una coda locale (outbox) e partono appena c'è rete; vince l'ultima scrittura per campo. */
 const CACHE="cucinario-stato-v1",OUTBOX="cucinario-outbox-v1",COLS=["plan","shopping","settings","photos","recipes","ingredients","categories","types"];
-const JSONF=new Set(["pranzo","cena","checks","have","ranges","times","ingredients","steps","vis","cats","goal","meals","types","kinds","schedule","people","extra"]);
+const JSONF=new Set(["pranzo","cena","checks","have","ranges","times","ingredients","steps","vis","cats","goal","meals","types","kinds","schedule","people","extra","done"]);
 const pb=new PocketBase(location.origin);pb.autoCancellation(false);
 // id dei record deterministici (15 caratteri a-z0-9), così ogni dispositivo sa quale record aggiornare
 const pad15=s=>(s.replace(/[^a-z0-9]/g,"")+"0".repeat(15)).slice(0,15);
@@ -194,12 +194,14 @@ function hash36(s){let a=0xdeadbeef,b=0x41c6ce57;for(const c of s){const x=c.cha
   a=Math.imul(a^a>>>16,2246822507)^Math.imul(b^b>>>13,3266489909);b=Math.imul(b^b>>>16,2246822507)^Math.imul(a^a>>>13,3266489909);
   return((b>>>0).toString(36)+(a>>>0).toString(36))}
 const ID={plan:k=>pad15("p"+k),shopping:w=>pad15("w"+w),settings:()=>"settings0000000",photos:r=>pad15("ph"+hash36(r)),ingredients:n=>pad15("i"+hash36(n))};
-const defaults=()=>({plan:{},checks:{},have:{},extra:{},photos:{},recipes:{},ingr:{},cats:{},types:{},shopMode:"casa",schedule:DEF_SCHED,
+const SHOP0=()=>({checks:{},have:{},extra:[],done:{}});
+const defaults=()=>({plan:{},shop:SHOP0(),photos:{},recipes:{},ingr:{},cats:{},types:{},shopMode:"casa",schedule:DEF_SCHED,
   ranges:{c:[45,60],p:[15,25],f:[20,35],fib:8},times:{pranzo:"18:00",cena:"23:00"},people:{a:2,b:1,kid:60}});
 let S=defaults(),outbox=[],netOk=true;
 try{S=Object.assign(defaults(),JSON.parse(localStorage.getItem(CACHE))||{})}catch(e){}
 try{outbox=JSON.parse(localStorage.getItem(OUTBOX))||[]}catch(e){}
 delete S.goals; // gli obiettivi ora stanno nelle categorie
+delete S.checks;delete S.have;delete S.extra; // spesa per settimana, prima della lista unica
 rebuildRecipes();
 function save(){try{localStorage.setItem(CACHE,JSON.stringify(S))}catch(e){}}
 function queue(col,id,data,del){data=JSON.parse(JSON.stringify(data||{}));const e=outbox.find(x=>x.col===col&&x.id===id);
@@ -208,7 +210,7 @@ function queue(col,id,data,del){data=JSON.parse(JSON.stringify(data||{}));const 
   try{localStorage.setItem(OUTBOX,JSON.stringify(outbox))}catch(e){}
   renderSync();clearTimeout(queue._t);queue._t=setTimeout(flush,300)}
 const queueSettings=f=>queue("settings",ID.settings(),{[f]:S[f]});
-const queueShop=(w,f)=>queue("shopping",ID.shopping(w),{week:w,[f]:S[f][w]||{}});
+const queueShop=f=>queue("shopping",ID.shopping("lista"),{week:"lista",[f]:S.shop[f]});
 // i campi json viaggiano come testo JSON: così una stringa resta una stringa (vedi JSONField.PrepareValue)
 const wire=d=>Object.fromEntries(Object.entries(d).map(([k,v])=>[k,JSONF.has(k)?JSON.stringify(v??null):v]));
 async function upsert(e){const body=wire(e.data);
@@ -231,7 +233,7 @@ async function flush(){
 // record del server → stato locale
 function applyRec(col,r,del){
   if(col==="plan"){if(del)delete S.plan[r.date];else S.plan[r.date]={pranzo:r.pranzo??null,cena:r.cena??null,kinds:r.kinds||{},people:r.people||{}}}
-  else if(col==="shopping"){if(del){delete S.checks[r.week];delete S.have[r.week];delete S.extra[r.week]}else{S.checks[r.week]=r.checks||{};S.have[r.week]=r.have||{};S.extra[r.week]=r.extra||[]}}
+  else if(col==="shopping"){if(r.week==="lista")S.shop=del?SHOP0():{checks:r.checks||{},have:r.have||{},extra:r.extra||[],done:r.done||{}}} // i vecchi record per settimana non servono più
   else if(col==="settings"){if(!del)for(const f of ["ranges","times","schedule","people"])if(r[f])S[f]=r[f]}
   else if(col==="photos"){if(del||!r.image)delete S.photos[r.recipe];else S.photos[r.recipe]=pb.files.getURL(r,r.image)}
   else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,archived:r.archived}}
@@ -243,7 +245,7 @@ function applyRec(col,r,del){
 function applyPending(){for(const {col,id,data,del} of outbox){
   if(del){if(col==="ingredients")delete S.ingr[id];else if(col==="recipes")delete S.recipes[id];else if(col==="categories")delete S.cats[id];else if(col==="types")delete S.types[id]}
   else if(col==="plan"){const p=S.plan[data.date]=S.plan[data.date]||{pranzo:null,cena:null};for(const m of ["pranzo","cena","kinds","people"])if(m in data)p[m]=data[m]}
-  else if(col==="shopping"){for(const f of ["checks","have","extra"])if(f in data)S[f][data.week]=data[f]}
+  else if(col==="shopping"){for(const f of ["checks","have","extra","done"])if(f in data)S.shop[f]=data[f]}
   else if(col==="settings")Object.assign(S,data);
   else if(col==="recipes")S.recipes[id]=Object.assign(S.recipes[id]||{},data);
   else if(col==="ingredients")S.ingr[id]=Object.assign(S.ingr[id]||{},data);
@@ -252,7 +254,7 @@ function applyPending(){for(const {col,id,data,del} of outbox){
   rebuildRecipes()}
 async function pull(){
   const lists=await Promise.all(COLS.map(c=>pb.collection(c).getFullList({batch:1000})));
-  S.plan={};S.checks={};S.have={};S.extra={};S.photos={};S.recipes={};S.ingr={};S.cats={};S.types={};
+  S.plan={};S.shop=SHOP0();S.photos={};S.recipes={};S.ingr={};S.cats={};S.types={};
   COLS.forEach((c,i)=>lists[i].forEach(r=>applyRec(c,r)));
   applyPending();save();netOk=true;
 }
@@ -384,7 +386,7 @@ function renderHeader(){
   const name=offset===0?"Questa settimana":offset===1?"Prossima settimana":offset===-1?"Settimana scorsa":(offset>0?`Tra ${offset} settimane`:`${-offset} settimane fa`);
   $("#weeklbl").innerHTML=`<small>${name}</small>${range}`;
   $("#title").textContent={week:"Settimana",shop:"Lista della spesa",rec:recMode==="ing"?"Ingredienti":"Ricette",set:"Impostazioni"}[tab];
-  $("#weeknav").hidden=tab==="rec"||tab==="set";
+  $("#weeknav").hidden=tab!=="week"; // la spesa non è per settimana
   $("#topRow").hidden=tab==="week";
   $("#autoBtn").hidden=tab!=="week";
   $("#wbal").hidden=tab!=="week";
@@ -902,21 +904,25 @@ $("#ingSearch").addEventListener("input",e=>{ingQuery=e.target.value;renderIng()
 $("#ingFilters").addEventListener("click",e=>{const b=e.target.closest("[data-f]");if(!b)return;ingFilter=b.dataset.f||null;renderIng()});
 
 /* ---------- Spesa ---------- */
-function shoppingList(){
+// pasti ancora da fare (da adesso in poi) con una ricetta, esclusi quelli già comprati con "Spesa fatta"
+const doneKey=(k,m)=>k+"|"+m;
+function shopMeals(){const tk=key(new Date());
+  return Object.keys(S.plan).filter(k=>k>=tk).sort().flatMap(k=>["pranzo","cena"].map(m=>({k,m,id:rid(slot(k,m))})))
+    .filter(x=>x.id&&!isPast(x.k,x.m)&&S.shop.done[doneKey(x.k,x.m)]!==x.id)}
+function shoppingList(meals){
   const map=new Map();
-  weekKeys().forEach(k=>["pranzo","cena"].forEach(m=>{const id=rid(slot(k,m));if(!id)return;const r=byId[id],x=pplFactor(peopleOf(k,m));
-    r.i.forEach(([n,q,u])=>{const kk=n+"|"+u;const e=map.get(kk)||{n,u,q:0,from:new Set()};e.q+=q*x;e.from.add(r.n);map.set(kk,e)})}));
+  meals.forEach(({k,m,id})=>{const r=byId[id],x=pplFactor(peopleOf(k,m));
+    r.i.forEach(([n,q,u])=>{const kk=n+"|"+u;const e=map.get(kk)||{n,u,q:0,from:new Set()};e.q+=q*x;e.from.add(r.n);map.set(kk,e)})});
   // grammi interi; pezzi, mazzi, cucchiai… arrotondati per eccesso
   return[...map.values()].map(e=>({...e,q:(e.u==="g"||e.u==="ml")?Math.round(e.q):Math.ceil(e.q-1e-6)}));
 }
-const wk=()=>key(weekStart());
-// quanto ho già a casa, per settimana
-const haveOf=()=>(S.have[wk()]=S.have[wk()]||{});
 const stepOf=(u,q)=>(u==="g"||u==="ml")?(q>=1000?100:50):1;
 const r1=x=>Math.round(x*10)/10;
-let shopItems={};
+const dayShort=k=>{const d=new Date(k+"T12:00");return `${DAYS[(d.getDay()+6)%7].slice(0,3)} ${d.getDate()} ${MONTHS[d.getMonth()]}`};
+let shopItems={},shopNow=[];
 function renderShop(){
-  const w=wk(),items=shoppingList().sort((a,b)=>a.n.localeCompare(b.n,"it")),checks=S.checks[w]||{},have=S.have[w]||{},extra=S.extra[w]||[],casa=S.shopMode==="casa";
+  const meals=shopMeals(),items=shoppingList(meals).sort((a,b)=>a.n.localeCompare(b.n,"it")),{checks,have,extra}=S.shop,casa=S.shopMode==="casa";
+  shopNow=meals;
   items.forEach(i=>{i.id=i.n+"|"+i.u;i.have=Math.min(have[i.id]||0,i.q);i.buy=r1(i.q-i.have)});
   shopItems=Object.fromEntries(items.map(i=>[i.id,i]));
   const toBuy=items.filter(i=>i.buy>0),atHome=items.filter(i=>i.buy<=0);
@@ -926,13 +932,15 @@ function renderShop(){
   $("#resetChecks").hidden=casa||!done;
   $("#prog").parentNode.hidden=casa;
   $("#prog").style.width=all?(done/all*100)+"%":"0";
+  const tk=key(new Date()),bought=Object.keys(S.shop.done).filter(x=>x.split("|")[0]>=tk&&!isPast(...x.split("|"))).length;
+  const span=meals.length?`<p class="shopnote">Per ${meals.length===1?"1 pasto":`${meals.length} pasti`} da fare, ${meals[0].k===meals[meals.length-1].k?dayShort(meals[0].k):`da ${dayShort(meals[0].k)} a ${dayShort(meals[meals.length-1].k)}`}${bought?` · ${bought} già comprati`:""}.</p>`:"";
   // in fondo le cose che non vengono dalle ricette: si aggiungono e si tolgono a mano
   const addHtml=`<form class="xadd" id="xadd"><input class="txt" id="xNew" maxlength="60" placeholder="Es. detersivo, pane, caffè" aria-label="Aggiungi alla spesa" autocomplete="off"><button class="btn">Aggiungi</button></form>`;
   const check=(id,name,sub,qty)=>{const ok=!!checks[id];return `<div class="item${ok?" done":""}"><button class="rowtap" data-check="${esc(id)}"><span class="box">${ok?"✓":""}</span><span class="iname"><b>${esc(name)}</b>${sub?`<small>${esc(sub)}</small>`:""}</span>${qty?`<span class="qty">${qty}</span>`:""}</button></div>`};
-  const noMeals=`<p class="empty-note">Nessun pasto in questa settimana.<br>Aggiungi qualche ricetta e la lista si compone da sola.</p>`;
+  const noMeals=`<p class="empty-note">${bought?"Hai già comprato tutto per i pasti in programma.":"Nessun pasto da fare in programma."}<br>Quando aggiungi delle ricette alla settimana, la lista si compone da sola.</p>`;
   if(casa){
     // controllo dispensa: − e + regolano direttamente quanto comprare
-    $("#shop").innerHTML=(items.length?`<p class="shopnote">Con − togli quello che hai già. Tocca il nome se ce l'hai tutto.</p><div class="items">`+
+    $("#shop").innerHTML=(items.length?span+`<p class="shopnote">Con − togli quello che hai già. Tocca il nome se ce l'hai tutto.</p><div class="items">`+
       items.map(i=>{const home=i.buy<=0;return `<div class="item${home?" home":""}">
        <button class="rowtap" data-home="${esc(i.id)}"><span class="iname"><b>${esc(i.n)}</b><small>${i.have>0?`serve ${fmtQty(i.q,i.u)} · a casa ${fmtQty(i.have,i.u)}`:`serve ${fmtQty(i.q,i.u)}`}</small></span></button>
        <div class="qstep"><button data-dec="${esc(i.id)}" aria-label="Compra meno ${esc(i.n)}" ${home?"disabled":""}>−</button><span class="qv">${home?"a casa":fmtQty(i.buy,i.u)}</span><button data-inc="${esc(i.id)}" aria-label="Compra più ${esc(i.n)}" ${i.have<=0?"disabled":""}>+</button></div></div>`}).join("")+`</div>`:noMeals)+
@@ -940,21 +948,31 @@ function renderShop(){
      (extra.length?`<div class="items">${extra.map(x=>`<div class="item"><span class="iname"><b>${esc(x.n)}</b></span><button class="iconbtn xdel" data-xdel="${esc(x.id)}" aria-label="Togli ${esc(x.n)}">✕</button></div>`).join("")}</div>`:"")+addHtml;
   }else{
     const byDone=(a,b)=>(!!checks[a.id])-(!!checks[b.id]);
-    $("#shop").innerHTML=(toBuy.length?`<div class="items">${toBuy.sort(byDone).map(i=>check(i.id,i.n,[...i.from].join(", "),fmtQty(i.buy,i.u))).join("")}</div>`:items.length?"":noMeals)+
+    $("#shop").innerHTML=(toBuy.length?span+`<div class="items">${toBuy.sort(byDone).map(i=>check(i.id,i.n,[...i.from].join(", "),fmtQty(i.buy,i.u))).join("")}</div>`:items.length?"":noMeals)+
      `<h3 class="shh">Altro</h3>`+(extra.length?`<div class="items">${[...extra].sort(byDone).map(x=>check(x.id,x.n)).join("")}</div>`:"")+addHtml+
-     (atHome.length?`<p class="shopnote" style="margin-top:14px">Già in casa: ${esc(atHome.map(i=>i.n).join(", "))}</p>`:"");
+     (atHome.length?`<p class="shopnote" style="margin-top:14px">Già in casa: ${esc(atHome.map(i=>i.n).join(", "))}</p>`:"")+
+     (all?`<div class="shopdone"><button class="btn" data-shopdone>Spesa fatta</button><p class="shopnote">I pasti di questa lista escono dalla spesa; quello che non hai preso resta in Altro.</p></div>`:"");
   }
 }
-function setHave(id,v){const it=shopItems[id];if(!it)return;const x=Math.max(0,Math.min(it.q,r1(v)));const H=haveOf();if(x)H[id]=x;else delete H[id];save();queueShop(wk(),"have");renderShop()}
+function setHave(id,v){const it=shopItems[id];if(!it)return;const x=Math.max(0,Math.min(it.q,r1(v)));const H=S.shop.have;if(x)H[id]=x;else delete H[id];save();queueShop("have");renderShop()}
+// spesa fatta: i pasti in lista sono comprati; gli ingredienti non presi passano in Altro con la quantità
+function shopDone(){const {checks,extra}=S.shop,tk=key(new Date());
+  const left=Object.values(shopItems).filter(i=>i.buy>0&&!checks[i.id]).map(i=>({id:"x"+randId(),n:`${i.n} · ${fmtQty(i.buy,i.u)}`}));
+  const done=Object.fromEntries(Object.entries(S.shop.done).filter(([x])=>x.split("|")[0]>=tk)); // i giorni passati non servono più
+  for(const x of shopNow)done[doneKey(x.k,x.m)]=x.id;
+  S.shop={checks:{},have:{},extra:[...extra.filter(x=>!checks[x.id]),...left],done};
+  save();for(const f of ["checks","have","extra","done"])queueShop(f);renderShop();window.scrollTo(0,0);
+  toast(left.length?`Spesa fatta · ${left.length} ${left.length===1?"cosa rimasta":"cose rimaste"} in Altro`:"Spesa fatta")}
 $("#shop").addEventListener("click",e=>{
   const dec=e.target.closest("[data-dec]");if(dec){const it=shopItems[dec.dataset.dec];setHave(it.id,it.have+stepOf(it.u,it.q));return}
   const inc=e.target.closest("[data-inc]");if(inc){const it=shopItems[inc.dataset.inc];setHave(it.id,it.have-stepOf(it.u,it.q));return}
   const h=e.target.closest("[data-home]");if(h){const it=shopItems[h.dataset.home];setHave(it.id,it.buy>0?it.q:0);return}
-  const x=e.target.closest("[data-xdel]");if(x){const w=wk();S.extra[w]=(S.extra[w]||[]).filter(i=>i.id!==x.dataset.xdel);if(S.checks[w])delete S.checks[w][x.dataset.xdel];save();queueShop(w,"extra");renderShop();return}
-  const b=e.target.closest("[data-check]");if(!b)return;const w=wk();S.checks[w]=S.checks[w]||{};const id=b.dataset.check;S.checks[w][id]=!S.checks[w][id];save();queueShop(w,"checks");renderShop()});
+  const x=e.target.closest("[data-xdel]");if(x){S.shop.extra=S.shop.extra.filter(i=>i.id!==x.dataset.xdel);delete S.shop.checks[x.dataset.xdel];save();queueShop("extra");queueShop("checks");renderShop();return}
+  if(e.target.closest("[data-shopdone]")){shopDone();return}
+  const b=e.target.closest("[data-check]");if(!b)return;const id=b.dataset.check;S.shop.checks[id]=!S.shop.checks[id];save();queueShop("checks");renderShop()});
 $("#shop").addEventListener("submit",e=>{e.preventDefault();const inp=$("#xNew"),n=inp.value.trim().replace(/\s+/g," ");if(!n)return;
-  const w=wk();S.extra[w]=[...(S.extra[w]||[]),{id:"x"+randId(),n}];save();queueShop(w,"extra");renderShop();$("#xNew").focus()});
-$("#resetChecks").onclick=()=>{S.checks[wk()]={};save();queueShop(wk(),"checks");renderShop();toast("Spunte azzerate")};
+  S.shop.extra=[...S.shop.extra,{id:"x"+randId(),n}];save();queueShop("extra");renderShop();$("#xNew").focus()});
+$("#resetChecks").onclick=()=>{S.shop.checks={};save();queueShop("checks");renderShop();toast("Spunte azzerate")};
 $("#shopMode").addEventListener("click",e=>{const b=e.target.closest("[data-mode]");if(!b)return;S.shopMode=b.dataset.mode;save();renderShop();window.scrollTo(0,0)});
 
 /* ---------- Ricette ---------- */

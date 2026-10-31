@@ -88,12 +88,13 @@ Le crea e gestisce la famiglia (Impostazioni → Obiettivi settimanali e categor
 - Riempi e Copia usano le persone già scelte per quel pasto (o quelle di casa); Copia porta anche le persone della settimana copiata.
 
 ### Lista della spesa
-- Somma gli ingredienti della settimana visualizzata (per le persone di ogni pasto), in un unico elenco alfabetico (non più per categoria, novembre 2026); al mercato sotto ogni prodotto le ricette che lo usano. I fuori casa non contano.
-- In fondo, **Altro**: cose che non vengono dalle ricette (detersivo, pane…), aggiunte a mano col campo in fondo e tolte con ✕ (in Controllo a casa); al mercato si spuntano come le altre e il campo per aggiungere c'è ancora. `shopping.extra` `[{id, n}]` (migrazione `1762502400_spesa_altro.js`), spunte in `checks` con lo stesso id.
+- **Non è per settimana** (novembre 2026): somma gli ingredienti di **tutti i pasti ancora da fare** (da adesso in poi, con gli orari di "passato"; per le persone di ogni pasto), in un unico elenco alfabetico; in cima "Per N pasti da fare, da … a …". Al mercato sotto ogni prodotto le ricette che lo usano. I fuori casa non contano. Nessuna freccia di settimana nella scheda Spesa.
+- **Spesa fatta** (in fondo, al mercato): i pasti in lista diventano "comprati" ed escono dalla spesa (`done` `{"data|pasto": id ricetta}`: se la ricetta del pasto cambia, torna in lista); i prodotti non spuntati passano in Altro con la quantità ("Pasta · 900 g"); spunte e "a casa" si azzerano; le cose di Altro spuntate spariscono.
+- In fondo, **Altro**: cose che non vengono dalle ricette (detersivo, pane…), aggiunte a mano col campo in fondo e tolte con ✕ (in Controllo a casa); al mercato si spuntano come le altre e il campo per aggiungere c'è ancora.
+- Dati: un solo record `shopping` (`week` = "lista", id `wlista000000000`, migrazione `1762588800_spesa_unica.js`) con `checks`, `have`, `extra` `[{id, n}]` e `done`; in `app.js` `S.shop`, `shopMeals()`, `shopDone()`. I vecchi record per settimana restano nel database ma non si usano.
 - Due modalità:
   - **Controllo a casa**: ogni riga ha **− quantità +** per scalare ciò che ho già. Passo: 1 per i pezzi, 50 g (100 g sopra il kg). Toccando il nome = "ce l'ho tutto".
   - **Al mercato**: lista da spuntare con quantità ridotte; barra di avanzamento; presi in fondo; "Già in casa" in una riga in fondo. Deve funzionare **offline**.
-- Quantità "a casa", spunte e cose in Altro valgono per la settimana visualizzata.
 
 ### Ricette e ingredienti: creare, modificare, eliminare
 - Scheda Ricette → **＋ Nuova ricetta**; dal dettaglio di una ricetta (anche dal pasto in settimana) → **Modifica** / **Elimina**.

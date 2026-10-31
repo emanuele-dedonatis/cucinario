@@ -359,3 +359,5 @@ select.txt.changed{border-color:var(--today)}
 .xadd{display:flex;gap:8px;margin-top:8px}
 .xadd .txt{flex:1;min-width:0}
 .item .xdel{width:32px;height:32px;font-size:14px}
+.shopdone{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.shopdone .btn{width:100%;margin-bottom:8px;justify-content:center;text-align:center}
