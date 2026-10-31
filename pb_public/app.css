@@ -267,6 +267,30 @@ nav.tabs button[aria-selected="true"]{color:var(--accent)}
 .stepper button{width:34px;height:34px;border-radius:50%;font-size:18px;font-weight:600;background:var(--surface-2)}
 .stepper output{font-weight:700;font-variant-numeric:tabular-nums;min-width:3ch;text-align:center}
 
+/* editor ricette */
+.newrec{margin-bottom:10px}
+.filters.wrapf{flex-wrap:wrap;overflow:visible;padding-bottom:0}
+.editor{display:flex;flex-direction:column;gap:14px}
+.ef{display:flex;flex-direction:column;gap:6px}
+.ef>span{font-weight:600;font-size:14px}
+.ef>span small{font-weight:500;color:var(--muted);margin-left:4px}
+.editor textarea{resize:vertical;line-height:1.4}
+.editor select.txt,.editor input.txt{padding:9px 8px;min-width:0}
+.erows{display:flex;flex-direction:column;gap:8px}
+/* nome su tutta la riga (con ✕), quantità e unità sotto */
+.erow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 38px;grid-template-areas:"n n d" "q u .";gap:6px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px}
+.erow [data-f="n"]{grid-area:n}.erow [data-f="q"]{grid-area:q}.erow [data-f="u"]{grid-area:u}.erow [data-del]{grid-area:d}
+.erow .iconbtn{width:38px;height:38px;font-size:15px}
+.einfo{grid-column:1/-1;text-align:left;font-size:12.5px;color:var(--muted);padding:0 2px}
+.einfo.warn{color:var(--warn);font-weight:600}
+.evals{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:8px;border-top:1px dashed var(--line);padding-top:8px}
+.evals p{grid-column:1/-1;margin:0;font-size:13px;color:var(--muted)}
+.evals label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:600;min-width:0}
+.evals .wide{grid-column:1/-1}
+.editor #edNut .nut{margin:0}
+.confirm{margin-top:12px;background:var(--warn-bg);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:10px}
+.confirm p{margin:0;font-size:14px}
+.btn.danger{background:#b42318;color:#fff}
 .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;z-index:50;background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:999px;font-weight:600;font-size:14px;transition:.2s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 @media (max-width:360px){.goal .gnum{font-size:19px}.goal .gname{font-size:10px}}

@@ -14,10 +14,10 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - **Schema** in `pb_migrations/` (JS, API PocketBase ≥ 0.23: `new Collection({...fields})`, `app.save`). Le modifiche allo schema vanno fatte con una **nuova** migrazione, non modificando quelle già applicate. `--automigrate=false`.
 - **Frontend** senza build in `pb_public/`: `index.html`, `app.css`, `app.js` (un'unica IIFE, stile compatto della demo), `sw.js`, `manifest.json`, SDK in `vendor/pocketbase.umd.js` (0.28.1).
 - **Sincronizzazione** (`app.js`, sezione "Stato"): stato `S` in cache su `localStorage`; ogni modifica passa da `setSlot` / `queueSettings` / `queueShop` → coda `outbox` → `upsert` (update, se 404 create con id deterministico). Il realtime e `pull()` aggiornano `S`; `applyPending()` dà precedenza alle modifiche locali non ancora inviate. I campi json viaggiano come testo JSON (`wire`), così una stringa resta stringa.
-- **Collezioni:** `plan` (un record per giorno), `shopping` (uno per settimana), `settings` (record unico), `photos` (una foto per ricetta, 960×600 JPEG). Regole: solo utenti autenticati. Registrazione pubblica disattivata.
+- **Collezioni:** `plan` (un record per giorno), `shopping` (uno per settimana), `settings` (record unico), `photos` (una foto per ricetta, 960×600 JPEG; il record si cerca per `recipe`), `recipes`, `ingredients` (catalogo). Regole: solo utenti autenticati. Registrazione pubblica disattivata.
 - **Locale per dispositivo:** `shopMode` (Controllo a casa / Al mercato).
 - **Service worker:** file dell'app stale-while-revalidate, foto e font cache-first, `/api/` sempre in rete.
-- Ricette ancora nel codice (`R`, scritte per 2 e scalate ×1,25 all'avvio), valori nutrizionali in `NUT` (per 100 g) e `WT` (g per unità).
+- **Ricette nel database** (migrazione `1761980400_recipes.js`, che ha importato le 17 di esempio): `recipes` = nome, `cat`, `ingredients` `[[nome, quantità, unità]]` già per 2,5 porzioni, `steps`, `oil` (g per tutta la ricetta), `vis` (illustrazione), `archived` (eliminata: sparisce da elenco, selettore e riempimento ma resta nei pasti pianificati). `ingredients` = catalogo per nome: `dept` (reparto della spesa), `c`/`p`/`f`/`fib` per 100 g, `unit_g` (peso di un'unità). In `app.js` `rebuildRecipes()` costruisce `R` (attive), `byId` (tutte, più gli alias dei vecchi id tipo `ceci` → `rceci0000000000`) e `ING`. Id: ricette nuove casuali, ingredienti `i` + hash del nome.
 - Online su https://cucinario.ededona.es: container su `127.0.0.1:8091`, nginx in Docker gestito con Ansible dal repo `infra` sulla Raspberry (`~/infra`, voce `cucinario` in `proxy_sites`).
 - Deploy: `./deploy.sh` (git pull + `docker compose up -d --build`), anche da cron ogni 5 minuti.
 - Backup: cron interno di PocketBase, lunedì 3:00, ultimi 8 in `pb_data/backups/`.
@@ -63,7 +63,7 @@ Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi er
   - **carboidrati, proteine, grassi in % sulle calorie** e in grammi, con barra che mostra **intervallo** e valore;
   - **fibre in grammi** con un minimo; calorie per porzione.
 - Intervalli default: carboidrati **45–60%**, proteine **15–25%**, grassi **20–35%**, fibre **≥ 8 g** a pasto. Modificabili.
-- Valori calcolati dagli ingredienti (per 100 g + peso medio per unità + circa un cucchiaio d'olio a testa).
+- Valori calcolati dagli ingredienti (catalogo: per 100 g + peso di un'unità) più l'olio della ricetta (default 25 g, circa un cucchiaio a testa).
 - Nell'elenco Ricette, le ricette fuori intervallo hanno solo un **triangolino arancione** (non un'etichetta testuale, che si confondeva con il tag della proteina).
 
 ### Porzioni
@@ -76,6 +76,12 @@ Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi er
   - **Al mercato**: lista da spuntare con quantità ridotte; barra di avanzamento; presi in fondo; "Già in casa" in una riga in fondo. Deve funzionare **offline**.
 - Quantità "a casa" e spunte valgono per la settimana visualizzata.
 
+### Ricette: creare, modificare, eliminare
+- Scheda Ricette → **＋ Nuova ricetta**; dal dettaglio di una ricetta (anche dal pasto in settimana) → **Modifica** / **Elimina**.
+- Editor: nome, fonte proteica, righe ingrediente (nome dal catalogo, quantità, unità), olio, procedimento (un passaggio per riga). Il pannello del bilanciamento si aggiorna mentre si scrive.
+- Ingrediente non ancora nel catalogo: la riga diventa arancione e chiede reparto, valori per 100 g e peso di un'unità; non si salva finché non sono inseriti. Cambiare i valori di un ingrediente esistente vale per tutte le ricette.
+- Eliminare = archiviare; salvare dall'editor una ricetta eliminata la ripristina.
+
 ### Impostazioni (scheda in basso)
 Obiettivi settimanali, Pasto bilanciato (intervalli), Orari dei pasti, Account (esci).
 
@@ -83,10 +89,9 @@ Obiettivi settimanali, Pasto bilanciato (intervalli), Orari dei pasti, Account (
 Barra in basso: **Settimana · Spesa · Ricette · Impostazioni**.
 
 ## Da fare / domande aperte
-1. **Editor delle ricette** (creare/modificare ricette con ingredienti, foto, procedimento; il bilanciamento deve aggiornarsi mentre cambio gli ingredienti). Le ricette andranno spostate in una collezione PocketBase.
-2. **Pasti composti?** Molti secondi risultano "da rivedere" perché sono il piatto da solo (es. orata senza contorno né pane). Decidere se un pasto può avere più elementi (secondo + contorno + pane) con bilanciamento sull'insieme, oppure se ogni ricetta include già tutto.
-3. **Opzione "avanzi di ieri sera"**: copiare la cena nel pranzo del giorno dopo senza duplicare gli ingredienti nella spesa (proposta, non confermata).
-4. Sostituire le 17 ricette di esempio con le nostre ricette vere.
+1. **Pasti composti?** Molti secondi risultano "da rivedere" perché sono il piatto da solo (es. orata senza contorno né pane). Decidere se un pasto può avere più elementi (secondo + contorno + pane) con bilanciamento sull'insieme, oppure se ogni ricetta include già tutto.
+2. **Opzione "avanzi di ieri sera"**: copiare la cena nel pranzo del giorno dopo senza duplicare gli ingredienti nella spesa (proposta, non confermata).
+3. Sostituire le 17 ricette di esempio con le nostre ricette vere.
 
 ## Note
 - Alternative scartate: Firebase Spark (Cloud Storage richiede Blaze), artifact con database condiviso di Claude.
