@@ -49,7 +49,7 @@ function rebuildRecipes(){
   byId={};
   for(const id in S.recipes){const x=S.recipes[id],rows=x.ingredients||[];
     const meals=MEALS.filter(m=>(x.meals||MEALS).includes(m));
-    byId[id]={id,n:x.name||"",k:recipeCats(rows),meals:meals.length?meals:MEALS,ty:TYP.filter(t=>(x.types||[]).includes(t.id)).map(t=>t.id),v:x.vis||null,s:x.steps||[],archived:!!x.archived,i:rows.map(([n,q,u])=>[n,q,u])}}
+    byId[id]={id,n:x.name||"",k:recipeCats(rows),meals:meals.length?meals:MEALS,ty:TYP.filter(t=>(x.types||[]).includes(t.id)).map(t=>t.id),v:x.vis||null,s:x.steps||[],l:Array.isArray(x.links)?x.links:[],archived:!!x.archived,i:rows.map(([n,q,u])=>[n,q,u])}}
   // pasti salvati quando le ricette stavano nel codice: "ceci" ora è il record "rceci0000000000"
   for(const id in S.recipes){const old=/^r([a-z]+)0*$/.exec(id);if(old&&!byId[old[1]])byId[old[1]]=byId[id]}
   R=Object.keys(S.recipes).map(id=>byId[id]).filter(r=>!r.archived).sort((a,b)=>a.n.localeCompare(b.n,"it"));
@@ -186,7 +186,7 @@ let today=new Date(),thisMonday=mondayOf(today);
    settings (unico record: obiettivi, intervalli, orari), photos (una foto per ricetta), recipes, ingredients.
    Le modifiche vanno in una coda locale (outbox) e partono appena c'è rete; vince l'ultima scrittura per campo. */
 const CACHE="cucinario-stato-v1",OUTBOX="cucinario-outbox-v1",COLS=["plan","shopping","settings","photos","recipes","ingredients","categories","types"];
-const JSONF=new Set(["pranzo","cena","checks","have","ranges","times","ingredients","steps","vis","cats","goal","meals","types","kinds","schedule","people","extra","done"]);
+const JSONF=new Set(["pranzo","cena","checks","have","ranges","times","ingredients","steps","links","vis","cats","goal","meals","types","kinds","schedule","people","extra","done"]);
 const pb=new PocketBase(location.origin);pb.autoCancellation(false);
 // id dei record deterministici (15 caratteri a-z0-9), così ogni dispositivo sa quale record aggiornare
 const pad15=s=>(s.replace(/[^a-z0-9]/g,"")+"0".repeat(15)).slice(0,15);
@@ -236,7 +236,7 @@ function applyRec(col,r,del){
   else if(col==="shopping"){if(r.week==="lista")S.shop=del?SHOP0():{checks:r.checks||{},have:r.have||{},extra:r.extra||[],done:r.done||{}}} // i vecchi record per settimana non servono più
   else if(col==="settings"){if(!del){for(const f of ["ranges","times","schedule","people"])if(r[f])S[f]=r[f];if("country" in r)S.country=r.country||""}}
   else if(col==="photos"){if(del||!r.image){delete S.photos[r.recipe];delete S.credits[r.recipe]}else{S.photos[r.recipe]=pb.files.getURL(r,r.image);if(r.credit)S.credits[r.recipe]=r.credit;else delete S.credits[r.recipe]}}
-  else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,archived:r.archived}}
+  else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],links:r.links||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,archived:r.archived}}
   else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,cats:r.cats||[],c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
   else if(col==="categories"){if(del)delete S.cats[r.id];else S.cats[r.id]={name:r.name,color:r.color,order:r.order,goal:r.goal}}
   else if(col==="types"){if(del)delete S.types[r.id];else S.types[r.id]={name:r.name,order:r.order}}
@@ -648,7 +648,17 @@ function recipeHtml(r,pp){const x=pp?pplFactor(pp):1;return photoHtml(r,"hero")+
   ${nutHtml(nutrition(r))}
   ${pp?`<h3 class="shh">Ingredienti <small>per ${esc(pplLbl(pp))}</small></h3>${pplStepHtml(pp)}`:`<h3 class="shh">Ingredienti <small>per una persona</small></h3>`}
   <ul class="ing">${r.i.map(i=>`<li><span>${esc(i[0])}</span><span>${fmtQty(pp?scaleQty(i[1],i[2],x):i[1],i[2])}</span></li>`).join("")}</ul>
-  <ol class="steps">${r.s.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`}
+  ${r.l.length?`<h3 class="shh">Link</h3><div class="rlinks">${r.l.map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(x.title||siteOf(x.url))}</b><small>${esc(x.title?siteOf(x.url):x.url.replace(/^https?:\/\//,"").slice(0,60))}</small></a>`).join("")}</div>`:""}
+  ${r.s.length?`<h3 class="shh">Procedimento</h3>`:""}<ol class="steps">${r.s.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`}
+// link della ricetta: una riga = un link; il testo prima dell'indirizzo è il titolo. Si può incollare anche tutto il testo
+// che Instagram copia condividendo un post: prendo l'indirizzo. Senza http si aggiunge (es. "giallozafferano.it/…").
+const siteOf=u=>{try{return new URL(u).hostname.replace(/^www\./,"")}catch(e){return u}};
+function parseLinks(text){return text.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{
+  let m=/https?:\/\/[^\s<>"]+/i.exec(l)||/(?:^|\s)((?:[a-z0-9-]+\.)+[a-z]{2,}\/[^\s<>"]*|(?:[a-z0-9-]+\.)+(?:com|it|es|org|net|tv)\b[^\s<>"]*)/i.exec(l);
+  if(!m)return null;const raw=m[1]||m[0],url=/^https?:/i.test(raw)?raw:"https://"+raw;
+  try{new URL(url)}catch(e){return null}
+  const title=l.replace(raw,"").replace(/[\s:·\-–|]+$/,"").replace(/^[\s:·\-–|]+/,"").trim().slice(0,80);
+  return{url:url.replace(/[).,;]+$/,""),title}}).filter(Boolean)}
 // foto della ricetta: ritagliata al centro a 960×600 e caricata; credit = autore · licenza · fonte per le foto dalla rete
 function crop(blob){return new Promise((ok,ko)=>{const u=URL.createObjectURL(blob),img=new Image();
   img.onload=()=>{URL.revokeObjectURL(u);const W=960,H=600,cv=document.createElement("canvas");cv.width=W;cv.height=H;const sc=Math.max(W/img.width,H/img.height);
@@ -817,7 +827,7 @@ const activeUses=n=>usesOf(n).filter(r=>!r.archived);
 const usesOf=n=>Object.keys(S.recipes).filter(id=>(S.recipes[id].ingredients||[]).some(x=>x[0]===n)).map(id=>byId[id]);
 function openEditor(id,back){
   const r=id?byId[id]:null;
-  const d={n:r?r.n:"",s:r?r.s.join("\n"):"",open:-1,meals:r?[...r.meals]:[...MEALS],ty:r?[...r.ty]:[],
+  const d={n:r?r.n:"",s:r?r.s.join("\n"):"",l:r?r.l.map(x=>x.title?`${x.title} ${x.url}`:x.url).join("\n"):"",open:-1,meals:r?[...r.meals]:[...MEALS],ty:r?[...r.ty]:[],
     rows:r?r.i.map(([n,q,u])=>({n,q:String(q),u})):[{n:"",q:"",u:"g"}],
     ing:{}}; // valori degli ingredienti nuovi o modificati qui, per nome; finiscono nel catalogo al salvataggio
   const vals=n=>d.ing[n]||ING[n]||null;
@@ -856,6 +866,7 @@ function openEditor(id,back){
         <button class="btn ghost" data-add>＋ Ingrediente</button></div>
       <div id="edNut"></div>
       <label class="ef"><span>Procedimento <small>un passaggio per riga</small></span><textarea class="txt" id="edSteps" rows="5">${esc(d.s)}</textarea></label>
+      <label class="ef"><span>Link <small>uno per riga, es. il post di Instagram; il testo prima del link è il titolo</small></span><textarea class="txt" id="edLinks" rows="2" placeholder="Pasta e ceci di nonna https://www.instagram.com/p/…" autocomplete="off" autocapitalize="off">${esc(d.l)}</textarea></label>
       <p class="hint" id="edErr" hidden></p>
       <div class="row"><button class="btn" data-save>Salva</button><button class="btn ghost" data-cancel>Annulla</button></div>
       <datalist id="ingList">${Object.keys(ING).sort((a,b)=>a.localeCompare(b,"it")).map(n=>`<option value="${esc(n)}">`).join("")}</datalist></div>`;
@@ -875,13 +886,13 @@ function openEditor(id,back){
       if(sameIng(old,data))continue;
       const iid=old?old.id:newIngId(n);S.ingr[iid]=data;queue("ingredients",iid,data)}
     const nid=r?r.id:randId(),ingr=rows.map(x=>[canon(x.n),+x.q,x.u]);
-    const data={name,meals:MEALS.filter(m=>d.meals.includes(m)),types:TYP.filter(t=>d.ty.includes(t.id)).map(t=>t.id),ingredients:ingr,steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),archived:false};
+    const data={name,meals:MEALS.filter(m=>d.meals.includes(m)),types:TYP.filter(t=>d.ty.includes(t.id)).map(t=>t.id),ingredients:ingr,steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),links:parseLinks(d.l),archived:false};
     S.recipes[nid]=Object.assign(S.recipes[nid]||{vis:null},data);queue("recipes",nid,data);
     rebuildRecipes();save();renderAll();toast(r?"Ricetta salvata":"Ricetta aggiunta");openRecipe(nid)};
   openSheet(r?`Modifica ricetta<small>${esc(r.n)}</small>`:"Nuova ricetta","");draw();
   const body=$("#sheetBody");
   body.oninput=e=>{const t=e.target,i=+t.dataset.i;
-    if(t.id==="edName")d.n=t.value;else if(t.id==="edSteps")d.s=t.value;
+    if(t.id==="edName")d.n=t.value;else if(t.id==="edSteps")d.s=t.value;else if(t.id==="edLinks")d.l=t.value;
     else if(t.dataset.f)d.rows[i][t.dataset.f]=t.value;
     else if(t.dataset.v){const n=canon(d.rows[i].n);d.ing[n][t.dataset.v]=t.value}
     refresh()};
