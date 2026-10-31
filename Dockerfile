@@ -19,6 +19,7 @@ RUN apk add --no-cache ca-certificates tzdata \
 
 COPY pb_migrations /pb/pb_migrations
 COPY pb_public /pb/pb_public
+COPY pb_hooks /pb/pb_hooks
 
 ENV TZ=Europe/Rome
 EXPOSE 8090
@@ -28,4 +29,5 @@ HEALTHCHECK --interval=60s --timeout=5s --start-period=20s \
   CMD wget -q -O /dev/null http://127.0.0.1:8090/api/health || exit 1
 
 CMD ["/pb/pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb/pb_data", \
-     "--publicDir=/pb/pb_public", "--migrationsDir=/pb/pb_migrations", "--automigrate=false"]
+     "--publicDir=/pb/pb_public", "--migrationsDir=/pb/pb_migrations", "--hooksDir=/pb/pb_hooks", \
+     "--automigrate=false"]

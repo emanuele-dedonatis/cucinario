@@ -12,7 +12,8 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 ## Architettura
 - **PocketBase v0.40.5** in Docker (`Dockerfile`, `docker-compose.yml`): SQLite, login, realtime (SSE), file, e serve anche `pb_public/`.
 - **Schema** in `pb_migrations/` (JS, API PocketBase ≥ 0.23: `new Collection({...fields})`, `app.save`). Le modifiche allo schema vanno fatte con una **nuova** migrazione, non modificando quelle già applicate. `--automigrate=false`.
-- **Frontend** senza build in `pb_public/`: `index.html`, `app.css`, `app.js` (un'unica IIFE, stile compatto della demo), `sw.js`, `manifest.json`, SDK in `vendor/pocketbase.umd.js` (0.28.1).
+- **Frontend** senza build in `pb_public/`: `index.html`, `app.css`, `app.js` (un'unica IIFE, stile compatto della demo), `sw.js`, `manifest.json`, SDK in `vendor/pocketbase.umd.js` (0.28.1), `vendor/zxing.min.js` (`@zxing/library` 0.21.3, letto al primo uso per i codici a barre).
+- **Hook** in `pb_hooks/off.pb.js` (`--hooksDir`): proxy autenticato verso **Open Food Facts** (`/api/cucinario/off/search?q=`, `/api/cucinario/off/product/<codice>`), perché il motore di ricerca di OFF non accetta chiamate dal browser (CORS) e OFF chiede un User-Agent dell'app. La ricerca a volte risponde 503: il client riprova una volta.
 - **Sincronizzazione** (`app.js`, sezione "Stato"): stato `S` in cache su `localStorage`; ogni modifica passa da `setSlot` / `queueSettings` / `queueShop` → coda `outbox` → `upsert` (update, se 404 create con id deterministico). Il realtime e `pull()` aggiornano `S`; `applyPending()` dà precedenza alle modifiche locali non ancora inviate. I campi json viaggiano come testo JSON (`wire`), così una stringa resta stringa.
 - **Collezioni:** `plan` (un record per giorno), `shopping` (uno per settimana), `settings` (record unico), `photos` (una foto per ricetta, 960×600 JPEG; il record si cerca per `recipe`), `recipes`, `ingredients` (catalogo). Regole: solo utenti autenticati. Registrazione pubblica disattivata.
 - **Locale per dispositivo:** `shopMode` (Controllo a casa / Al mercato).
@@ -93,6 +94,7 @@ Le crea e gestisce la famiglia (Impostazioni → Obiettivi settimanali e categor
 - Scheda Ricette → **＋ Nuova ricetta**; dal dettaglio di una ricetta (anche dal pasto in settimana) → **Modifica** / **Elimina**.
 - Editor: nome, righe ingrediente (nome dal catalogo, quantità, unità), procedimento (un passaggio per riga). Le categorie e il pannello del bilanciamento si aggiornano mentre si scrive.
 - Ingrediente non ancora nel catalogo: la riga diventa arancione e chiede categorie, valori per 100 g e peso di un'unità; non si salva finché non sono inseriti. Cambiare i valori di un ingrediente esistente vale per tutte le ricette.
+- **Valori automatici da Open Food Facts** (gratis, licenza ODbL; Claude API valutata e scartata per non avere costi): nei campi di un ingrediente (catalogo ed editor) ci sono **🔍 Cerca i valori** (per nome; elenco di prodotti con carb · prot · grassi · fibre per 100 g, prima i nomi uguali o che iniziano col nome cercato) e **▦ Codice a barre** (foto; `BarcodeDetector` su Android, ZXing altrimenti; se non legge, cifre a mano). Toccando un prodotto i valori si compilano e restano modificabili. Per un ingrediente nuovo la ricerca parte da sola: nell'editor, appena si scrive un nome che non è nel catalogo, si apre il suo pannello già con i risultati. Un ingrediente nuovo non si salva finché non ha valori (scelti o scritti; uno 0 scritto a mano vale, es. il sale). Prodotti senza valori o tutti a zero sono scartati. Serve la rete.
 - **Catalogo ingredienti**: scheda Ricette → interruttore **Ricette / Ingredienti**. Elenco alfabetico con ricerca e filtro per categoria, "in N ricette" (solo ricette attive) e tag delle categorie; **＋ Nuovo**; toccando un ingrediente si modificano nome, categorie (chip da accendere) e valori.
   - **Rinominare** aggiorna il nome in tutte le ricette che lo usano (anche quelle eliminate, senza mostrarle).
   - Cambiare le categorie di un ingrediente cambia subito quelle delle ricette che lo usano.
@@ -108,7 +110,7 @@ Barra in basso: **Settimana · Spesa · Ricette · Impostazioni**.
 ## Da fare / domande aperte
 1. **Pasti composti?** Molti secondi risultano "da rivedere" perché sono il piatto da solo (es. orata senza contorno né pane). Decidere se un pasto può avere più elementi (secondo + contorno + pane) con bilanciamento sull'insieme, oppure se ogni ricetta include già tutto.
 2. **Opzione "avanzi di ieri sera"**: copiare la cena nel pranzo del giorno dopo senza duplicare gli ingredienti nella spesa (proposta, non confermata).
-3. Sostituire le 17 ricette di esempio con le nostre ricette vere.
+3. Inserire le nostre ricette vere: il 31/10/2026 ricette, ingredienti e foto sono stati azzerati in produzione (migrazione `1762329600_azzera_ricette.js`; pasti fuori casa, categorie, tipi e impostazioni restano).
 
 ## Note
 - Alternative scartate: Firebase Spark (Cloud Storage richiede Blaze), artifact con database condiviso di Claude.

@@ -643,6 +643,65 @@ function openRecipe(id){const r=byId[id];
     if(e.target.closest("[data-nodel]")){$("#delBox").innerHTML="";return}
     if(e.target.closest("[data-confirm]")){S.recipes[id].archived=true;queue("recipes",id,{archived:true});rebuildRecipes();save();closeSheet();renderAll();toast("Ricetta eliminata")}}}
 
+/* ---------- Open Food Facts: valori per 100 g dal nome o dal codice a barre ----------
+   Database libero (licenza ODbL), tramite il nostro server. I valori sono quelli delle etichette UE:
+   i carboidrati non comprendono le fibre, come nel nostro catalogo. Serve la rete; si possono sempre scrivere a mano. */
+const OFF_F="code,product_name,product_name_it,brands,nutriments";
+const n100=(n,k)=>{const x=n[k+"_100g"];return x==null||x===""||isNaN(+x)?null:Math.round(+x*10)/10};
+function offItem(p){const n=(p&&p.nutriments)||{},c=n100(n,"carbohydrates"),pr=n100(n,"proteins"),f=n100(n,"fat");
+  if(c==null||pr==null||f==null||c+pr+f===0)return null; // senza valori o tutti a zero: dato incompleto
+  return{name:String(p.product_name_it||p.product_name||"").trim()||"Senza nome",brand:String((Array.isArray(p.brands)?p.brands[0]:String(p.brands||"").split(",")[0])||"").trim(),c,p:pr,f,fib:n100(n,"fiber")}}
+// le chiamate passano dal nostro server (pb_hooks/off.pb.js): il motore di ricerca di OFF non accetta chiamate dal browser
+// prima i prodotti col nome uguale alla ricerca, poi quelli che iniziano così, poi gli altri; a parità, i nomi più brevi
+// (più vicini al prodotto semplice) e poi l'ordine di Open Food Facts
+async function offSearch(q){const d=await pb.send("/api/cucinario/off/search",{query:{q}});
+  const k=q.toLowerCase(),rank=x=>{const n=x.name.toLowerCase();return n===k?0:n.startsWith(k)?1:n.includes(k)?2:3};
+  return(d.products||[]).map(offItem).filter(Boolean).map((x,i)=>({x,i,r:rank(x),w:x.name.split(/\s+/).length})).sort((a,b)=>a.r-b.r||a.w-b.w||a.i-b.i).slice(0,8).map(o=>o.x)}
+async function offBarcode(code){try{return offItem((await pb.send("/api/cucinario/off/product/"+encodeURIComponent(code),{})).product)}catch(err){if(err.status===404||err.status===400)return null;throw err}}
+// codice a barre da una foto: BarcodeDetector dove c'è (Chrome su Android), altrimenti ZXing (vendor/zxing.min.js, caricato al primo uso)
+async function readBarcode(file){
+  const img=await new Promise((ok,ko)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);ok(im)};im.onerror=ko;im.src=u});
+  const sc=Math.min(1,1600/Math.max(img.width,img.height)),cv=document.createElement("canvas");
+  cv.width=Math.round(img.width*sc);cv.height=Math.round(img.height*sc);cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+  if("BarcodeDetector" in window){try{const r=await new BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e"]}).detect(cv);if(r[0])return r[0].rawValue}catch(e){}}
+  if(!window.ZXing)await new Promise((ok,ko)=>{const sc=document.createElement("script");sc.src="vendor/zxing.min.js";sc.onload=ok;sc.onerror=ko;document.head.appendChild(sc)});
+  const Z=window.ZXing,hints=new Map();hints.set(Z.DecodeHintType.TRY_HARDER,true);
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.EAN_8,Z.BarcodeFormat.UPC_A,Z.BarcodeFormat.UPC_E]);
+  try{return(await new Z.BrowserMultiFormatReader(hints).decodeFromImageUrl(cv.toDataURL("image/jpeg",.9))).getText()}catch(e){return null}}
+// box = riquadro dei risultati dentro i campi dell'ingrediente; t = {v: valori da riempire, after: da chiamare dopo}
+async function offFind(box,t,mode,arg){
+  arg=String(arg||"").trim();
+  if(!arg){box.innerHTML=`<p class="offmsg">Scrivi prima il nome dell'ingrediente.</p>`;return}
+  box.innerHTML=`<p class="offmsg">${mode==="search"?`Cerco «${esc(arg)}» su Open Food Facts…`:`Cerco il codice ${esc(arg)}…`}</p>`;
+  let res;try{res=mode==="search"?await offSearch(arg):[await offBarcode(arg)].filter(Boolean)}
+  catch(err){if(box.isConnected)box.innerHTML=`<p class="offmsg warn">${navigator.onLine&&err.status?"Open Food Facts non risponde: riprova tra poco.":"Serve la connessione a internet."}</p>`;return}
+  if(!box.isConnected)return;
+  box._res=res;
+  if(mode==="code"&&res.length)return offApply(box,t,res[0]); // il codice a barre è già il prodotto giusto
+  box.innerHTML=res.length?`<p class="offmsg">Tocca il prodotto più simile per usare i suoi valori (per 100 g):</p><div class="offlist">${res.map((x,i)=>`<button type="button" data-offpick="${i}"><b>${esc(x.name)}</b>${x.brand&&x.brand!==x.name?` <small>${esc(x.brand)}</small>`:""}<span>carb ${num(x.c)} · prot ${num(x.p)} · grassi ${num(x.f)} · fibre ${x.fib==null?"—":num(x.fib)}</span></button>`).join("")}</div>`
+    :mode==="search"?`<p class="offmsg warn">Nessun prodotto con i valori per «${esc(arg)}». Prova un nome più semplice o il codice a barre, oppure scrivili a mano.</p>`
+    :`<p class="offmsg warn">Il codice ${esc(arg)} non è in Open Food Facts (o non ha i valori): scrivili a mano.</p>`}
+function offApply(box,t,x){Object.assign(t.v,{c:x.c,p:x.p,f:x.f,fib:x.fib??(+t.v.fib||0)});
+  box.closest(".evals").querySelectorAll("input[data-v]").forEach(inp=>{if(["c","p","f","fib"].includes(inp.dataset.v))inp.value=t.v[inp.dataset.v]||""});
+  box.innerHTML=`<p class="offmsg ok">✓ Valori da Open Food Facts: ${esc(x.name)}${x.brand&&x.brand!==x.name?` (${esc(x.brand)})`:""}${x.fib==null?" · fibre non indicate, controllale":""}</p>`;
+  if(t.after)t.after()}
+// gestori comuni a catalogo ed editor; tgt(box) → {v, q: nome da cercare, after}
+function offClick(e,tgt){const b=e.target.closest("[data-off],[data-offpick]");if(!b)return false;
+  const box=b.closest(".evals").querySelector("[data-offres]"),t=tgt(box);
+  if(b.dataset.offpick!=null){const x=(box._res||[])[+b.dataset.offpick];if(x)offApply(box,t,x)}
+  else if(b.dataset.off==="search")offFind(box,t,"search",t.q);
+  else if(b.dataset.off==="code")offFind(box,t,"code",((box.querySelector("[data-offcode]")||{}).value||"").replace(/\D/g,""));
+  return true}
+function offFile(e,tgt){const inp=e.target;if(!inp.matches||!inp.matches("[data-offscan]")||!inp.files[0])return false;
+  const box=inp.closest(".evals").querySelector("[data-offres]"),t=tgt(box),file=inp.files[0];inp.value="";
+  box.innerHTML=`<p class="offmsg">Leggo il codice a barre…</p>`;
+  readBarcode(file).catch(()=>null).then(code=>{if(!box.isConnected)return;if(code)return offFind(box,t,"code",code);
+    box.innerHTML=`<p class="offmsg warn">Non riesco a leggere il codice a barre: rifai la foto più vicina e dritta, oppure scrivi le cifre.</p>
+      <div class="offcode"><input class="txt" data-offcode inputmode="numeric" placeholder="Es. 8001234567890" aria-label="Cifre del codice a barre"><button type="button" class="btn ghost" data-off="code">Cerca</button></div>`});
+  return true}
+// valori non ancora scelti né scritti (uno 0 scritto a mano conta: il sale non ha macronutrienti)
+const offEmpty=v=>!v||["c","p","f"].every(k=>v[k]==null||v[k]==="");
+
 /* ---------- Editor delle ricette ---------- */
 const UNITS=["g","ml","pz","spicchio","mazzo","rametto","costa","cucchiaio","cucchiai","fette","busta"];
 const NUTF=[["c","Carboidrati"],["p","Proteine"],["f","Grassi"],["fib","Fibre"]];
@@ -656,6 +715,8 @@ function ingFieldsHtml(v,a){a=a||"";const has=new Set(v.cats||[]);
   const num=(k,l,ph,cls)=>`<label${cls?` class="${cls}"`:""}><span>${l}</span><input class="txt" type="number" inputmode="decimal" min="0" step="any" ${a} data-v="${k}" value="${v[k]||""}" placeholder="${ph||0}"></label>`;
   return `<div class="wide ichips"><span>Categorie</span><div>${CAT.length?CAT.map(c=>`<button type="button" class="chip k${(c.color||0)%NCOL}" ${a} data-icat="${c.id}" aria-pressed="${has.has(c.id)}">${esc(c.name)}</button>`).join("")
     :`<small>Nessuna categoria: si creano da Impostazioni → Obiettivi settimanali.</small>`}</div></div>
+    <div class="wide offbar"><button type="button" class="btn ghost" ${a} data-off="search">🔍 Cerca i valori</button><label class="btn ghost filebtn">▦ Codice a barre<input type="file" accept="image/*" capture="environment" ${a} data-offscan></label></div>
+    <div class="wide offres" ${a} data-offres></div>
     ${NUTF.map(([k,l])=>num(k,l+" (g)")).join("")}${num("unit_g","Peso di 1 unità in grammi (pz, mazzo, spicchio…)","—","wide")}`}
 const ingData=(name,v)=>({name,cats:CAT.filter(c=>(v.cats||[]).includes(c.id)).map(c=>c.id),c:+v.c||0,p:+v.p||0,f:+v.f||0,fib:+v.fib||0,unit_g:+v.unit_g||0});
 const sameIng=(a,b)=>a&&b&&a.name===b.name&&JSON.stringify(ingCats(a))===JSON.stringify(b.cats)&&INGF.every(k=>(a[k]||0)===(b[k]||0));
@@ -673,7 +734,8 @@ function openEditor(id,back){
   const vals=n=>d.ing[n]||ING[n]||null;
   const valid=()=>d.rows.filter(x=>x.n.trim()&&+x.q>0);
   const info=x=>{const n=canon(x.n);if(!n)return["",""];const v=vals(n);
-    if(!v)return["warn","Nuovo ingrediente: tocca qui per categorie e valori"];
+    if(!v)return["warn","Nuovo ingrediente: tocca qui per i valori (si cercano da soli)"];
+    if(!ING[n]&&offEmpty(v))return["warn","Nuovo ingrediente: scegli o scrivi i valori qui sotto"];
     if(!(x.u==="g"||x.u==="ml")&&!v.unit_g)return["warn",`Quanto pesa 1 ${x.u}? Tocca qui`];
     const cs=ingCats(v).map(cname).join(", ");
     return["",`${cs?cs+" · ":""}per 100 g: carb ${num(v.c)} · prot ${num(v.p)} · grassi ${num(v.f)} · fibre ${num(v.fib)}`]};
@@ -717,7 +779,7 @@ function openEditor(id,back){
     if(TYP.length&&!d.ty.length)return fail("Scegli almeno un tipo.");
     if(!rows.length)return fail("Aggiungi almeno un ingrediente.");
     if(rows.some(x=>!x.n.trim()||!(+x.q>0)))return fail("Ogni ingrediente ha bisogno di nome e quantità.");
-    const fresh=[...new Set(rows.map(x=>canon(x.n)))].filter(n=>!vals(n));
+    const fresh=[...new Set(rows.map(x=>canon(x.n)))].filter(n=>!vals(n)||(!ING[n]&&offEmpty(vals(n))));
     if(fresh.length)return fail(`Inserisci i valori di: ${fresh.join(", ")} (tocca la riga arancione sotto l'ingrediente).`);
     // catalogo: ingredienti nuovi o con valori cambiati
     for(const n of new Set(rows.map(x=>canon(x.n)))){const v=d.ing[n];if(!v)continue;const old=ING[n],data=ingData(n,v);
@@ -734,15 +796,19 @@ function openEditor(id,back){
     else if(t.dataset.f)d.rows[i][t.dataset.f]=t.value;
     else if(t.dataset.v){const n=canon(d.rows[i].n);d.ing[n][t.dataset.v]=t.value}
     refresh()};
-  // finito di scrivere il nome: lo allineo al catalogo e, se i valori sono aperti, li ridisegno per il nuovo nome
-  body.onchange=e=>{const t=e.target;if(t.dataset.f!=="n")return;const i=+t.dataset.i;d.rows[i].n=canon(t.value);t.value=d.rows[i].n;
-    if(d.open===i){const n=d.rows[i].n;if(n&&!d.ing[n])d.ing[n]={...(ING[n]||{cats:[]})};draw()}else refresh()};
-  body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+  // valori da Open Food Facts per la riga aperta; per un ingrediente nuovo e ancora vuoto la ricerca parte da sola
+  const tgt=box=>{const n=canon(d.rows[+box.dataset.i].n);return{v:d.ing[n],q:n,after:refresh}};
+  const autoOff=i=>{const n=canon(d.rows[i].n),v=d.ing[n],box=body.querySelector(".evals [data-offres]");if(n&&!ING[n]&&v&&offEmpty(v)&&box)offFind(box,tgt(box),"search",n)};
+  // finito di scrivere il nome: lo allineo al catalogo; se è un ingrediente nuovo apro subito i suoi valori
+  body.onchange=e=>{if(offFile(e,tgt))return;const t=e.target;if(t.dataset.f!=="n")return;const i=+t.dataset.i;d.rows[i].n=canon(t.value);t.value=d.rows[i].n;
+    const n=d.rows[i].n;if(n&&!ING[n]&&!d.ing[n])d.open=i;
+    if(d.open===i){if(n&&!d.ing[n])d.ing[n]={...(ING[n]||{cats:[]})};draw();autoOff(i)}else refresh()};
+  body.onclick=e=>{if(offClick(e,tgt))return;const b=e.target.closest("button");if(!b)return;
     if(b.dataset.meal||b.dataset.typ){const arr=b.dataset.meal?d.meals:d.ty,v=b.dataset.meal||b.dataset.typ,i=arr.indexOf(v);if(i<0)arr.push(v);else arr.splice(i,1);b.setAttribute("aria-pressed",i<0)}
     else if(b.dataset.icat){const n=canon(d.rows[+b.dataset.i].n);toggleCat(d.ing[n],b.dataset.icat);b.setAttribute("aria-pressed",d.ing[n].cats.includes(b.dataset.icat));refresh()}
     else if("add" in b.dataset){d.rows.push({n:"",q:"",u:"g"});draw();body.querySelector(`[data-i="${d.rows.length-1}"][data-f="n"]`).focus()}
     else if(b.dataset.del){const i=+b.dataset.del;d.rows.splice(i,1);if(!d.rows.length)d.rows.push({n:"",q:"",u:"g"});d.open=d.open===i?-1:d.open>i?d.open-1:d.open;draw()}
-    else if(b.dataset.open){const i=+b.dataset.open,n=canon(d.rows[i].n);d.open=d.open===i?-1:i;if(d.open===i&&!d.ing[n])d.ing[n]={...(ING[n]||{cats:[]})};draw()}
+    else if(b.dataset.open){const i=+b.dataset.open,n=canon(d.rows[i].n);d.open=d.open===i?-1:i;if(d.open===i&&!d.ing[n])d.ing[n]={...(ING[n]||{cats:[]})};draw();if(d.open===i)autoOff(i)}
     else if("save" in b.dataset)doSave();
     else if("cancel" in b.dataset){if(back)back();else closeSheet()}};
 }
@@ -762,7 +828,7 @@ function openIngredient(id){
   const all=old?usesOf(old.name):[],uses=all.filter(r=>!r.archived);
   openSheet(old?`Ingrediente<small>${esc(old.name)}</small>`:"Nuovo ingrediente",`<div class="editor">
     <label class="ef"><span>Nome</span><input class="txt" id="igName" value="${esc(v.name)}" placeholder="Es. Ceci cotti" autocomplete="off"></label>
-    <div class="evals iform"><p>Le ricette che lo usano prendono le sue categorie. Valori per 100 g, come sull'etichetta.</p>${ingFieldsHtml(v)}</div>
+    <div class="evals iform"><p>Le ricette che lo usano prendono le sue categorie. Valori per 100 g, come sull'etichetta: cercali per nome o col codice a barre.</p>${ingFieldsHtml(v)}</div>
     ${uses.length?`<div class="ef"><span>Usato in ${uses.length} ${uses.length===1?"ricetta":"ricette"} <small>i cambiamenti valgono per tutte</small></span>
       <ul class="uses">${uses.map(r=>`<li>${esc(r.n)}</li>`).join("")}</ul></div>`:""}
     <p class="hint" id="igErr" hidden></p>
@@ -773,7 +839,11 @@ function openIngredient(id){
   const fail=msg=>{const el=$("#igErr");el.textContent=msg;el.hidden=false;el.scrollIntoView({block:"center",behavior:"smooth"})};
   const body=$("#sheetBody");
   body.oninput=e=>{const t=e.target;if(t.id==="igName")v.name=t.value;else if(t.dataset.v)v[t.dataset.v]=t.value};
-  body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+  // valori da Open Food Facts: per un ingrediente nuovo la ricerca parte appena c'è il nome
+  const tgt=()=>({v,q:v.name}),autoOff=()=>{const box=body.querySelector("[data-offres]");if(!old&&v.name.trim()&&offEmpty(v)&&box)offFind(box,tgt(),"search",v.name)};
+  body.onchange=e=>{if(offFile(e,tgt))return;if(e.target.id==="igName")autoOff()};
+  autoOff();
+  body.onclick=e=>{if(offClick(e,tgt))return;const b=e.target.closest("button");if(!b)return;
     if(b.dataset.icat){toggleCat(v,b.dataset.icat);b.setAttribute("aria-pressed",v.cats.includes(b.dataset.icat))}
     else if("cancel" in b.dataset)closeSheet();
     else if("delete" in b.dataset){$("#delBox").innerHTML=`<div class="confirm"><p>Eliminare <b>${esc(old.name)}</b> dal catalogo?</p>
@@ -785,6 +855,7 @@ function openIngredient(id){
       const name=v.name.trim().replace(/\s+/g," ");if(!name)return fail("Manca il nome dell'ingrediente.");
       const dup=Object.keys(S.ingr).find(x=>x!==id&&S.ingr[x].name.toLowerCase()===name.toLowerCase());
       if(dup)return fail(`C'è già «${S.ingr[dup].name}» nel catalogo.`);
+      if(!old&&offEmpty(v))return fail("Mancano i valori: cercali per nome o col codice a barre, oppure scrivili (0 se non ne ha).");
       const data=ingData(name,v);
       if(sameIng(old,data)){closeSheet();return}
       const iid=old?id:newIngId(name);S.ingr[iid]=data;queue("ingredients",iid,data);
