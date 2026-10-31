@@ -41,7 +41,7 @@ const recMeta=r=>[mealsLbl(r.meals),r.ty.map(tname).join(", ")].filter(Boolean).
    senza v se ne usa una predefinita (DEFV). */
 const pplFactor=([a,b])=>a+b*S.people.kid/100;
 const pplLbl=([a,b])=>[a?`${a} ${a===1?"adulto":"adulti"}`:"",b?`${b} ${b===1?"bambino":"bambini"}`:""].filter(Boolean).join(" e ");
-let R=[],byId={},ING={}; // R = ricette attive (elenco, selettore, riempimento); byId comprende anche quelle eliminate; ING = catalogo per nome
+let R=[],DRAFTS=[],byId={},ING={}; // R = ricette attive (elenco, selettore, riempimento); DRAFTS = in costruzione; byId comprende anche quelle eliminate; ING = catalogo per nome
 const grams=(q,u,x)=>(u==="g"||u==="ml")?q:q*((x&&x.unit_g)||100);
 function rebuildRecipes(){
   rebuildCats();rebuildTypes();
@@ -49,10 +49,11 @@ function rebuildRecipes(){
   byId={};
   for(const id in S.recipes){const x=S.recipes[id],rows=x.ingredients||[];
     const meals=MEALS.filter(m=>(x.meals||MEALS).includes(m));
-    byId[id]={id,n:x.name||"",k:recipeCats(rows),meals:meals.length?meals:MEALS,ty:TYP.filter(t=>(x.types||[]).includes(t.id)).map(t=>t.id),v:x.vis||null,s:x.steps||[],l:Array.isArray(x.links)?x.links:[],archived:!!x.archived,i:rows.map(([n,q,u])=>[n,q,u])}}
+    byId[id]={id,n:x.name||"",k:recipeCats(rows),meals:meals.length?meals:MEALS,ty:TYP.filter(t=>(x.types||[]).includes(t.id)).map(t=>t.id),v:x.vis||null,s:x.steps||[],l:Array.isArray(x.links)?x.links:[],dr:!!x.draft,archived:!!x.archived,i:rows.map(([n,q,u])=>[n,q,u])}}
   // pasti salvati quando le ricette stavano nel codice: "ceci" ora è il record "rceci0000000000"
   for(const id in S.recipes){const old=/^r([a-z]+)0*$/.exec(id);if(old&&!byId[old[1]])byId[old[1]]=byId[id]}
-  R=Object.keys(S.recipes).map(id=>byId[id]).filter(r=>!r.archived).sort((a,b)=>a.n.localeCompare(b.n,"it"));
+  const live=Object.keys(S.recipes).map(id=>byId[id]).filter(r=>!r.archived).sort((a,b)=>a.n.localeCompare(b.n,"it"));
+  R=live.filter(r=>!r.dr);DRAFTS=live.filter(r=>r.dr); // le ricette in costruzione non vanno nella settimana
   for(const k in nutCache)delete nutCache[k];for(const k in svgCache)delete svgCache[k];
 }
 // ingredienti in comune tra due ricette (escludo erbe e piccole cose che non cambiano il lavoro in cucina)
@@ -236,7 +237,7 @@ function applyRec(col,r,del){
   else if(col==="shopping"){if(r.week==="lista")S.shop=del?SHOP0():{checks:r.checks||{},have:r.have||{},extra:r.extra||[],done:r.done||{}}} // i vecchi record per settimana non servono più
   else if(col==="settings"){if(!del){for(const f of ["ranges","times","schedule","people"])if(r[f])S[f]=r[f];if("country" in r)S.country=r.country||""}}
   else if(col==="photos"){if(del||!r.image){delete S.photos[r.recipe];delete S.credits[r.recipe]}else{S.photos[r.recipe]=pb.files.getURL(r,r.image);if(r.credit)S.credits[r.recipe]=r.credit;else delete S.credits[r.recipe]}}
-  else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],links:r.links||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,archived:r.archived}}
+  else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],links:r.links||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,draft:r.draft,archived:r.archived}}
   else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,cats:r.cats||[],c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
   else if(col==="categories"){if(del)delete S.cats[r.id];else S.cats[r.id]={name:r.name,color:r.color,order:r.order,goal:r.goal}}
   else if(col==="types"){if(del)delete S.types[r.id];else S.types[r.id]={name:r.name,order:r.order}}
@@ -592,7 +593,7 @@ $("#scrim").onclick=closeSheet;$("#closeSheet").onclick=closeSheet;
 const slotLabel=(k,m)=>{const d=new Date(k+"T12:00");return `${DAYS[(d.getDay()+6)%7]} ${d.getDate()} ${MONTHS[d.getMonth()]} · ${m}`};
 function filtersHtml(active,all){return [null,...CAT.map(c=>c.id)].map(t=>`<button data-f="${t||""}" aria-pressed="${(t||null)===active}">${t?esc(cname(t)):(all||"Tutte")}</button>`).join("")}
 const cname=id=>catById[id]?catById[id].name:"";
-function cardHtml(r,cur,showBal,extra){const ok=!checkBalance(nutrition(r)).length;return `<button class="rcard${cur?" current":""}" data-id="${r.id}">${photoHtml(r)}<span class="rinfo"><span class="rname">${esc(r.n)}</span><span class="row" style="gap:6px">${tagsHtml(r.k)}</span><span class="meta">${esc(recMeta(r))}</span>${extra||""}</span>${showBal&&!ok?`<span class="warnico" title="Da rivedere" aria-label="Da rivedere"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z" fill="currentColor"/><path d="M12 9v5" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="1.4" fill="var(--surface)"/></svg></span>`:""}</button>`}
+function cardHtml(r,cur,showBal,extra){const ok=r.dr||!checkBalance(nutrition(r)).length;return `<button class="rcard${cur?" current":""}${r.dr?" draft":""}" data-id="${r.id}">${photoHtml(r)}<span class="rinfo"><span class="rname">${esc(r.n)}</span><span class="row" style="gap:6px">${tagsHtml(r.k)}</span><span class="meta">${esc(recMeta(r))}</span>${extra||""}</span>${showBal&&!ok?`<span class="warnico" title="Da rivedere" aria-label="Da rivedere"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z" fill="currentColor"/><path d="M12 9v5" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="1.4" fill="var(--surface)"/></svg></span>`:""}</button>`}
 
 function openPicker(k,m,f){
   const cur=rid(slot(k,m)),c=counts();
@@ -645,9 +646,9 @@ function recipeHtml(r,pp){const x=pp?pplFactor(pp):1;return photoHtml(r,"hero")+
   `<div class="row photobtns"><button class="btn ghost" data-wphoto>🔍 Cerca foto</button><label class="btn ghost filebtn">${S.photos[r.id]?"Cambia foto":"Carica foto"}<input type="file" accept="image/*" data-photo="${r.id}"></label></div>
   <div class="row" style="margin-bottom:4px">${tagsHtml(r.k)}</div>
   <p class="rmeta">${esc(recMeta(r))}</p>
-  ${nutHtml(nutrition(r))}
+  ${r.dr?"":nutHtml(nutrition(r))}
   ${pp?`<h3 class="shh">Ingredienti <small>per ${esc(pplLbl(pp))}</small></h3>${pplStepHtml(pp)}`:`<h3 class="shh">Ingredienti <small>per una persona</small></h3>`}
-  <ul class="ing">${r.i.map(i=>`<li><span>${esc(i[0])}</span><span>${fmtQty(pp?scaleQty(i[1],i[2],x):i[1],i[2])}</span></li>`).join("")}</ul>
+  <ul class="ing">${r.i.map(i=>`<li><span>${esc(i[0])}</span><span>${!(i[1]>0)?"—":fmtQty(pp?scaleQty(i[1],i[2],x):i[1],i[2])}</span></li>`).join("")}</ul>
   ${r.l.length?`<h3 class="shh">Link</h3><div class="rlinks">${r.l.map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(x.title||siteOf(x.url))}</b><small>${esc(x.title?siteOf(x.url):x.url.replace(/^https?:\/\//,"").slice(0,60))}</small></a>`).join("")}</div>`:""}
   ${r.s.length?`<h3 class="shh">Procedimento</h3>`:""}<ol class="steps">${r.s.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`}
 // link della ricetta: una riga = un link; il testo prima dell'indirizzo è il titolo. Si può incollare anche tutto il testo
@@ -706,9 +707,15 @@ function openDetail(k,m){
     else{setSlot(k,m,null);closeSheet();renderAll();toast("Pasto tolto")}};
   bindPhoto(()=>openDetail(k,m));
 }
+// cosa manca a una ricetta in costruzione per poterla salvare come ricetta vera
+function draftMissing(r){const m=[];
+  if(!r.i.length)m.push("ingredienti");else{if(r.i.some(x=>!(x[1]>0)))m.push("quantità");if(r.i.some(x=>!ING[x[0]]))m.push("valori di "+r.i.filter(x=>!ING[x[0]]).map(x=>x[0].toLowerCase()).slice(0,3).join(", "))}
+  if(TYP.length&&!r.ty.length)m.push("tipo");
+  return m.length?"manca: "+m.join(", "):"pronta da completare"}
 function openRecipe(id){const r=byId[id];
-  openSheet(esc(r.n),(r.archived?`<p class="hint">Ricetta eliminata: resta solo nei pasti già pianificati. Salvandola dall'editor torna tra le ricette.</p>`:"")+recipeHtml(r)+
-    `<div class="row"><button class="btn" data-edit>Modifica</button>${r.archived?"":`<button class="btn ghost" data-delete>Elimina</button>`}</div><div id="delBox"></div>`);
+  openSheet(esc(r.n),(r.archived?`<p class="hint">Ricetta eliminata: resta solo nei pasti già pianificati. Salvandola dall'editor torna tra le ricette.</p>`:"")+
+    (r.dr&&!r.archived?`<p class="hint">In costruzione · ${esc(draftMissing(r))}. Completala per usarla nella settimana.</p>`:"")+recipeHtml(r)+
+    `<div class="row"><button class="btn" data-edit>${r.dr?"Completa":"Modifica"}</button>${r.archived?"":`<button class="btn ghost" data-delete>Elimina</button>`}</div><div id="delBox"></div>`);
   bindPhoto(()=>openRecipe(id));
   $("#sheetBody").onclick=e=>{if(e.target.closest("[data-ranges]")){openRanges(()=>openRecipe(id));return}
     if(e.target.closest("[data-wphoto]")){openPhotoSearch(id,()=>openRecipe(id));return}
@@ -828,7 +835,7 @@ const usesOf=n=>Object.keys(S.recipes).filter(id=>(S.recipes[id].ingredients||[]
 function openEditor(id,back){
   const r=id?byId[id]:null;
   const d={n:r?r.n:"",s:r?r.s.join("\n"):"",l:r?r.l.map(x=>x.title?`${x.title} ${x.url}`:x.url).join("\n"):"",open:-1,meals:r?[...r.meals]:[...MEALS],ty:r?[...r.ty]:[],
-    rows:r?r.i.map(([n,q,u])=>({n,q:String(q),u})):[{n:"",q:"",u:"g"}],
+    rows:r&&r.i.length?r.i.map(([n,q,u])=>({n,q:q>0?String(q):"",u})):[{n:"",q:"",u:"g"}],
     ing:{}}; // valori degli ingredienti nuovi o modificati qui, per nome; finiscono nel catalogo al salvataggio
   const vals=n=>d.ing[n]||ING[n]||null;
   const valid=()=>d.rows.filter(x=>x.n.trim()&&+x.q>0);
@@ -868,27 +875,29 @@ function openEditor(id,back){
       <label class="ef"><span>Procedimento <small>un passaggio per riga</small></span><textarea class="txt" id="edSteps" rows="5">${esc(d.s)}</textarea></label>
       <label class="ef"><span>Link <small>uno per riga, es. il post di Instagram; il testo prima del link è il titolo</small></span><textarea class="txt" id="edLinks" rows="2" placeholder="Pasta e ceci di nonna https://www.instagram.com/p/…" autocomplete="off" autocapitalize="off">${esc(d.l)}</textarea></label>
       <p class="hint" id="edErr" hidden></p>
-      <div class="row"><button class="btn" data-save>Salva</button><button class="btn ghost" data-cancel>Annulla</button></div>
+      <div class="row"><button class="btn" data-save>${r&&r.dr?"Salva ricetta":"Salva"}</button>${!r||r.dr?`<button class="btn ghost" data-draft>Salva come bozza</button>`:""}<button class="btn ghost" data-cancel>Annulla</button></div>
       <datalist id="ingList">${Object.keys(ING).sort((a,b)=>a.localeCompare(b,"it")).map(n=>`<option value="${esc(n)}">`).join("")}</datalist></div>`;
     refresh()};
   const fail=msg=>{const el=$("#edErr");el.textContent=msg;el.hidden=false;el.scrollIntoView({block:"center",behavior:"smooth"})};
-  const doSave=()=>{
-    const name=d.n.trim(),rows=d.rows.filter(x=>x.n.trim()||x.q);
-    if(!name)return fail("Manca il nome della ricetta.");
+  // draft = ricetta in costruzione: basta il nome; gli ingredienti senza valori restano solo nella ricetta (non nel catalogo)
+  const doSave=draft=>{
+    const name=d.n.trim(),rows=d.rows.filter(x=>draft?x.n.trim():x.n.trim()||x.q);
+    if(!name)return fail(draft?"Dai almeno un nome alla ricetta.":"Manca il nome della ricetta.");
+    if(!draft){
     if(!d.meals.length)return fail("Scegli se è da pranzo, da cena o entrambi.");
     if(TYP.length&&!d.ty.length)return fail("Scegli almeno un tipo.");
     if(!rows.length)return fail("Aggiungi almeno un ingrediente.");
     if(rows.some(x=>!x.n.trim()||!(+x.q>0)))return fail("Ogni ingrediente ha bisogno di nome e quantità.");
     const fresh=[...new Set(rows.map(x=>canon(x.n)))].filter(n=>!vals(n)||(!ING[n]&&offEmpty(vals(n))));
-    if(fresh.length)return fail(`Inserisci i valori di: ${fresh.join(", ")} (tocca la riga arancione sotto l'ingrediente).`);
+    if(fresh.length)return fail(`Inserisci i valori di: ${fresh.join(", ")} (tocca la riga arancione sotto l'ingrediente).`);}
     // catalogo: ingredienti nuovi o con valori cambiati
-    for(const n of new Set(rows.map(x=>canon(x.n)))){const v=d.ing[n];if(!v)continue;const old=ING[n],data=ingData(n,v);
+    for(const n of new Set(rows.map(x=>canon(x.n)))){const v=d.ing[n];if(!v||(!ING[n]&&offEmpty(v)))continue;const old=ING[n],data=ingData(n,v);
       if(sameIng(old,data))continue;
       const iid=old?old.id:newIngId(n);S.ingr[iid]=data;queue("ingredients",iid,data)}
-    const nid=r?r.id:randId(),ingr=rows.map(x=>[canon(x.n),+x.q,x.u]);
-    const data={name,meals:MEALS.filter(m=>d.meals.includes(m)),types:TYP.filter(t=>d.ty.includes(t.id)).map(t=>t.id),ingredients:ingr,steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),links:parseLinks(d.l),archived:false};
+    const nid=r?r.id:randId(),ingr=rows.map(x=>[canon(x.n),+x.q||0,x.u]);
+    const data={name,meals:MEALS.filter(m=>d.meals.includes(m)),types:TYP.filter(t=>d.ty.includes(t.id)).map(t=>t.id),ingredients:ingr,steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),links:parseLinks(d.l),draft:!!draft,archived:false};
     S.recipes[nid]=Object.assign(S.recipes[nid]||{vis:null},data);queue("recipes",nid,data);
-    rebuildRecipes();save();renderAll();toast(r?"Ricetta salvata":"Ricetta aggiunta");openRecipe(nid)};
+    rebuildRecipes();save();renderAll();toast(draft?"Salvata tra le ricette in costruzione":r&&r.dr?"Ricetta completata: ora si può usare nella settimana":r?"Ricetta salvata":"Ricetta aggiunta");openRecipe(nid)};
   openSheet(r?`Modifica ricetta<small>${esc(r.n)}</small>`:"Nuova ricetta","");draw();
   const body=$("#sheetBody");
   body.oninput=e=>{const t=e.target,i=+t.dataset.i;
@@ -909,7 +918,8 @@ function openEditor(id,back){
     else if("add" in b.dataset){d.rows.push({n:"",q:"",u:"g"});draw();body.querySelector(`[data-i="${d.rows.length-1}"][data-f="n"]`).focus()}
     else if(b.dataset.del){const i=+b.dataset.del;d.rows.splice(i,1);if(!d.rows.length)d.rows.push({n:"",q:"",u:"g"});d.open=d.open===i?-1:d.open>i?d.open-1:d.open;draw()}
     else if(b.dataset.open){const i=+b.dataset.open,n=canon(d.rows[i].n);d.open=d.open===i?-1:i;if(d.open===i&&!d.ing[n])d.ing[n]={...(ING[n]||{cats:[]})};draw();if(d.open===i)autoOff(i)}
-    else if("save" in b.dataset)doSave();
+    else if("save" in b.dataset)doSave(false);
+    else if("draft" in b.dataset)doSave(true);
     else if("cancel" in b.dataset){if(back)back();else closeSheet()}};
 }
 
@@ -1049,8 +1059,10 @@ function renderRec(){
   $("#recPane").hidden=recMode!=="rec";$("#ingPane").hidden=recMode!=="ing";renderIng();
   $("#recFilters").innerHTML=filtersHtml(recFilter);
   if(recFilter&&!catById[recFilter])recFilter=null;
-  const list=R.filter(r=>!recFilter||r.k.includes(recFilter));
-  $("#recList").innerHTML=list.length?list.map(r=>cardHtml(r,false,true)).join(""):`<p class="empty-note">Nessuna ricetta${recFilter?` nella categoria ${esc(cname(recFilter).toLowerCase())}`:""}.<br>Aggiungila con «Nuova ricetta».</p>`;
+  const list=R.filter(r=>!recFilter||r.k.includes(recFilter)),drafts=recFilter?[]:DRAFTS;
+  // in cima le ricette in costruzione (non hanno ancora tutto: niente filtri per categoria)
+  $("#recList").innerHTML=(drafts.length?`<h3 class="shh">In costruzione</h3>${drafts.map(r=>cardHtml(r,false,false,`<span class="dmiss">${esc(draftMissing(r))}</span>`)).join("")}<h3 class="shh">Ricette</h3>`:"")+
+    (list.length?list.map(r=>cardHtml(r,false,true)).join(""):`<p class="empty-note">Nessuna ricetta${recFilter?` nella categoria ${esc(cname(recFilter).toLowerCase())}`:""}.<br>Aggiungila con «Nuova ricetta».</p>`);
 }
 $("#newRec").addEventListener("click",()=>openEditor(null));
 $("#recMode").addEventListener("click",e=>{const b=e.target.closest("[data-mode]");if(!b)return;recMode=b.dataset.mode;renderRec();renderHeader();window.scrollTo(0,0)});

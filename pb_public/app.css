@@ -383,3 +383,8 @@ select.txt.changed{border-color:var(--today)}
 .rlinks a:first-child{border-top:0}
 .rlinks b{display:block;font-weight:600;overflow-wrap:anywhere}
 .rlinks small{display:block;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+
+/* ricette in costruzione */
+.rcard.draft{border-style:dashed;background:transparent}
+.rcard.draft .ph{opacity:.55}
+.dmiss{display:block;font-size:12px;color:var(--warn);font-weight:600}
