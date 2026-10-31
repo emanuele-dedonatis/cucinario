@@ -99,7 +99,7 @@ Con Docker: `docker compose up --build`, poi <http://127.0.0.1:8091>.
 | `recipes` | `name`, `meals` (pranzo/cena), `types` (id dei tipi), `ingredients` (`[[nome, quantità per una persona adulta, unità]]`, olio compreso), `steps`, `links` (`[{url, title}]`), `vis`, `draft` (in costruzione: non si usa nella settimana), `archived` | casuale; le 17 di esempio `r` + vecchio id |
 | `ingredients` | `name`, `cats` (id delle categorie), `c`/`p`/`f`/`fib` per 100 g, `unit_g` | `i` + hash del nome |
 | `types` | `name`, `order` (tipi delle ricette: all'inizio Feriale e Festivo) | casuale; iniziali `t` + nome |
-| `categories` | `name`, `color` (0–9), `order`, `goal` (`{min, max}` a settimana) | casuale; le 7 iniziali `k` + nome |
+| `categories` | `name`, `order` (ordine di creazione), `goal` (`{min, max}` a settimana); il colore si calcola dal nome (`color` non si usa più) | casuale; le 7 iniziali `k` + nome |
 
 Gli id sono deterministici, così ogni telefono sa quale record aggiornare anche se è stato creato dall'altro. Ogni modifica finisce in una coda locale (`localStorage`) e parte appena c'è rete; il server rimanda le modifiche all'altro telefono in tempo reale. Se due modifiche toccano lo stesso campo, vince l'ultima.
 

@@ -1,13 +1,27 @@
 (function(){
 /* ---------- Categorie (collezione categories sul server) ----------
-   Le crea la famiglia da Impostazioni → Obiettivi settimanali: {name, color (indice della tavolozza --k0…--k9 in app.css),
-   order (non più usato: le categorie vanno in ordine alfabetico), goal:{min, max}}. Ogni ingrediente ha una lista di
+   Le crea la famiglia da Impostazioni → Obiettivi settimanali: {name, order (ordine di creazione), goal:{min, max}}.
+   Il colore (col, indice della tavolozza --k0…--k9 in app.css) non si sceglie: viene dal nome, vedi rebuildCats. Ogni ingrediente ha una lista di
    categorie e una ricetta ha quelle dei suoi ingredienti: sono i tag di ricette e ingredienti, i filtri e gli obiettivi della settimana. */
 const NCOL=10;
 let CAT=[],catById={}; // CAT = categorie in ordine alfabetico
 const normGoal=g=>({min:(g&&g.min)||0,max:g&&g.max!=null?g.max:null});
 function rebuildCats(){CAT=Object.keys(S.cats).map(id=>({...S.cats[id],id,goal:normGoal(S.cats[id].goal)}))
-  .sort((a,b)=>a.name.localeCompare(b.name,"it"));catById=Object.fromEntries(CAT.map(c=>[c.id,c]))}
+  .sort((a,b)=>a.name.localeCompare(b.name,"it"));catById=Object.fromEntries(CAT.map(c=>[c.id,c]));
+  // colore dal nome; se è già preso, il primo libero. In ordine di creazione: una categoria nuova non cambia
+  // il colore di quelle che ci sono già. Finita la tavolozza (NCOL colori) si genera una tonalità nuova nel punto del
+  // cerchio più lontano da tutte quelle già usate (tavolozza compresa), con la stessa leggibilità (.kx in app.css).
+  const used=new Set(),hues=[...PAL_H];let extra=0;
+  for(const c of [...CAT].sort((a,b)=>(a.order||0)-(b.order||0)||(a.id<b.id?-1:1))){
+    if(used.size<NCOL){let k=nameHash(c.name)%NCOL;while(used.has(k))k=(k+1)%NCOL;used.add(k);c.col=k}
+    else{const far=h=>Math.min(...hues.map(x=>{const d=Math.abs(h-x)%360;return Math.min(d,360-d)}));
+      let best=0;for(let h=1;h<360;h++)if(far(h)>far(best))best=h;
+      hues.push(best);c.col=NCOL+extra++;c.hue=best}}}
+// tonalità dei colori della tavolozza --k0…--k8 in app.css (--k9 è grigio); da aggiornare se cambia la tavolozza
+const PAL_H=[204,34,323,169,0,52,262,120,27];
+// classe e stile del colore di una categoria: k0…k9 dalla tavolozza, oltre "kx" con la tonalità generata
+const catCls=(c,base)=>c.col<NCOL?`class="${base} k${c.col}"`:`class="${base} kx" style="--h:${c.hue}"`;
+function nameHash(s){let h=2166136261;for(const ch of s.toLowerCase())h=Math.imul(h^ch.charCodeAt(0),16777619);return h>>>0}
 const ingCats=x=>((x&&x.cats)||[]).filter(id=>catById[id]);
 // rows = [[nome, quantità, unità]]; look(nome) → ingrediente. Categorie nell'ordine della lista
 function recipeCats(rows,look){look=look||(n=>ING[n]);const s=new Set();for(const [n] of rows)for(const id of ingCats(look(n)))s.add(id);return CAT.filter(c=>s.has(c.id)).map(c=>c.id)}
@@ -128,7 +142,7 @@ const DEFV_COL=[DEFV.pesce,DEFV.lenticchie,DEFV.fagioli,DEFV.ceci,DEFV.carne,DEF
 const svgCache={};
 function dishSvg(r){
   if(svgCache[r.id])return svgCache[r.id];
-  const c0=catById[r.k[0]],col=c0?(c0.color||0)%NCOL:9;
+  const c0=catById[r.k[0]],col=c0?c0.col%NCOL:9;
   const rnd=rng(r.id),v=r.v||DEFV_COL[col%DEFV_COL.length],[t1,t2]=TABLE[col];
   const W=160,H=100,cx=80,cy=50,PR=42;
   let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" preserveAspectRatio="xMidYMid slice">`;
@@ -239,7 +253,7 @@ function applyRec(col,r,del){
   else if(col==="photos"){if(del||!r.image){delete S.photos[r.recipe];delete S.credits[r.recipe]}else{S.photos[r.recipe]=pb.files.getURL(r,r.image);if(r.credit)S.credits[r.recipe]=r.credit;else delete S.credits[r.recipe]}}
   else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],links:r.links||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,draft:r.draft,archived:r.archived}}
   else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,cats:r.cats||[],c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
-  else if(col==="categories"){if(del)delete S.cats[r.id];else S.cats[r.id]={name:r.name,color:r.color,order:r.order,goal:r.goal}}
+  else if(col==="categories"){if(del)delete S.cats[r.id];else S.cats[r.id]={name:r.name,order:r.order,goal:r.goal}}
   else if(col==="types"){if(del)delete S.types[r.id];else S.types[r.id]={name:r.name,order:r.order}}
 }
 // le modifiche locali non ancora inviate hanno la precedenza su quello che arriva dal server
@@ -292,7 +306,7 @@ function setSlot(k,m,id,pp){const p=S.plan[k]=S.plan[k]||{pranzo:null,cena:null}
 // − adulti + − bambini +: data-pp="a|b", data-d="±1"
 const pplStepHtml=([a,b])=>`<div class="ppl">${[["a","Adulti",a],["b","Bambini",b]].map(([w,l,n])=>`<span class="pplf"><span>${l}</span><span class="qstep"><button data-pp="${w}" data-d="-1" aria-label="${l}: uno in meno" ${n<=0||a+b<=1?"disabled":""}>−</button><span class="qv">${n}</span><button data-pp="${w}" data-d="1" aria-label="${l}: uno in più" ${n>=20?"disabled":""}>+</button></span></span>`).join("")}</div>`;
 const pplStep=(pp,b)=>{const x=[...pp],i=b.dataset.pp==="a"?0:1;x[i]=Math.max(0,Math.min(20,x[i]+ +b.dataset.d));return x[0]+x[1]?x:pp};
-const tagHtml=id=>{const c=catById[id];return c?`<span class="tag k${(c.color||0)%NCOL}">${esc(c.name)}</span>`:""};
+const tagHtml=id=>{const c=catById[id];return c?`<span ${catCls(c,"tag")}>${esc(c.name)}</span>`:""};
 const tagsHtml=ids=>ids.map(tagHtml).join("");
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),1900)}
 
@@ -329,7 +343,7 @@ function openWeekBal(){const {c,issues,st}=weekBal(),a=weekStart(),b=addDays(a,6
   $("#sheetBody").onclick=e=>{if(e.target.closest("[data-goals]"))openGoals(openWeekBal)};
 }
 $("#wbal").addEventListener("click",openWeekBal);
-// obiettivi e categorie: creare, rinominare, cambiare colore, eliminare
+// obiettivi e categorie: creare, rinominare, eliminare (il colore viene dal nome)
 function openGoals(back){
   if(typeof back!=="function")back=null;
   const self=()=>openGoals(back);
@@ -350,11 +364,10 @@ function openGoals(back){
     S.cats[id].goal=g;queue("categories",id,{goal:g});rebuildCats();save();draw();renderGoals();renderSettings()};
 }
 function openCat(id,back){
-  const old=id?S.cats[id]:null,v={name:old?old.name:"",color:old?(old.color||0)%NCOL:CAT.length%NCOL};
+  const old=id?S.cats[id]:null,v={name:old?old.name:""};
   const users=old?Object.keys(S.ingr).filter(i=>(S.ingr[i].cats||[]).includes(id)).map(i=>S.ingr[i].name).sort((a,b)=>a.localeCompare(b,"it")):[];
   openSheet(old?`Categoria<small>${esc(old.name)}</small>`:"Nuova categoria",`<div class="editor">
     <label class="ef"><span>Nome</span><input class="txt" id="caName" value="${esc(v.name)}" placeholder="Es. Pesce" autocomplete="off"></label>
-    <div class="ef"><span>Colore</span><div class="swatches">${Array.from({length:NCOL},(_,i)=>`<button class="swatch k${i}" data-col="${i}" aria-pressed="${i===v.color}" aria-label="Colore ${i+1}"></button>`).join("")}</div></div>
     ${old?`<div class="ef"><span>${users.length?`Ingredienti con questa categoria (${users.length})`:"Nessun ingrediente ha questa categoria"}</span>${users.length?`<p class="shopnote" style="margin:0">${esc(users.join(", "))}</p>`:""}</div>`:""}
     <p class="hint" id="caErr" hidden></p>
     <div class="row"><button class="btn" data-save>Salva</button><button class="btn ghost" data-cancel>Annulla</button>${old?`<button class="btn ghost" data-delete>Elimina</button>`:""}</div>
@@ -363,8 +376,7 @@ function openCat(id,back){
   const body=$("#sheetBody"),fail=msg=>{const el=$("#caErr");el.textContent=msg;el.hidden=false};
   body.oninput=e=>{if(e.target.id==="caName")v.name=e.target.value};
   body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
-    if(b.dataset.col){v.color=+b.dataset.col;body.querySelectorAll("[data-col]").forEach(x=>x.setAttribute("aria-pressed",x===b))}
-    else if("cancel" in b.dataset)back();
+    if("cancel" in b.dataset)back();
     else if("delete" in b.dataset){$("#delBox").innerHTML=`<div class="confirm"><p>Eliminare la categoria <b>${esc(old.name)}</b>?${users.length?` Verrà tolta da ${users.length===1?"un ingrediente":users.length+" ingredienti"}.`:""} Il suo obiettivo sparisce.</p>
       <div class="row"><button class="btn danger" data-confirm>Elimina</button><button class="btn ghost" data-nodel>Annulla</button></div></div>`;$("#delBox").scrollIntoView({block:"nearest",behavior:"smooth"})}
     else if("nodel" in b.dataset)$("#delBox").innerHTML="";
@@ -375,7 +387,7 @@ function openCat(id,back){
     else if("save" in b.dataset){
       const name=v.name.trim().replace(/\s+/g," ");if(!name)return fail("Manca il nome della categoria.");
       const dup=CAT.find(c=>c.id!==id&&c.name.toLowerCase()===name.toLowerCase());if(dup)return fail(`C'è già la categoria «${dup.name}».`);
-      const nid=id||randId(),data=old?{name,color:v.color}:{name,color:v.color,order:Math.max(-1,...CAT.map(c=>c.order||0))+1,goal:{min:0,max:null}};
+      const nid=id||randId(),data=old?{name}:{name,order:Math.max(-1,...CAT.map(c=>c.order||0))+1,goal:{min:0,max:null}};
       S.cats[nid]=Object.assign(S.cats[nid]||{},data);queue("categories",nid,data);
       rebuildRecipes();save();renderAll();toast(old?"Categoria salvata":"Categoria aggiunta");back()}};
 }
@@ -821,7 +833,7 @@ const INGF=["c","p","f","fib","unit_g"];
 // categorie, valori per 100 g e peso di un'unità; a = attributi in più (es. la riga dell'editor)
 function ingFieldsHtml(v,a){a=a||"";const has=new Set(v.cats||[]);
   const num=(k,l,ph,cls)=>`<label${cls?` class="${cls}"`:""}><span>${l}</span><input class="txt" type="number" inputmode="decimal" min="0" step="any" ${a} data-v="${k}" value="${v[k]||""}" placeholder="${ph||0}"></label>`;
-  return `<div class="wide ichips"><span>Categorie</span><div>${CAT.length?CAT.map(c=>`<button type="button" class="chip k${(c.color||0)%NCOL}" ${a} data-icat="${c.id}" aria-pressed="${has.has(c.id)}">${esc(c.name)}</button>`).join("")
+  return `<div class="wide ichips"><span>Categorie</span><div>${CAT.length?CAT.map(c=>`<button type="button" ${catCls(c,"chip")} ${a} data-icat="${c.id}" aria-pressed="${has.has(c.id)}">${esc(c.name)}</button>`).join("")
     :`<small>Nessuna categoria: si creano da Impostazioni → Obiettivi settimanali.</small>`}</div></div>
     <div class="wide offbar"><button type="button" class="btn ghost" ${a} data-off="search">🔍 Cerca i valori</button><label class="btn ghost filebtn">▦ Codice a barre<input type="file" accept="image/*" capture="environment" ${a} data-offscan></label></div>
     <div class="wide offres" ${a} data-offres></div>
