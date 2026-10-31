@@ -92,11 +92,12 @@ Con Docker: `docker compose up --build`, poi <http://127.0.0.1:8091>.
 |---|---|---|
 | `plan` | un giorno: `date`, `pranzo`, `cena` (id ricetta, `{"o":"nota"}` se fuori casa, oppure `null`) | `p` + data, es. `p20261031000000` |
 | `shopping` | una settimana: `week` (lunedì), `checks` (spunte), `have` (già a casa) | `w` + data del lunedì |
-| `settings` | `goals`, `ranges`, `times` | `settings0000000` |
+| `settings` | `ranges`, `times` | `settings0000000` |
 | `photos` | `recipe`, `image` | `ph` + hash dell'id ricetta |
-| `recipes` | `name`, `cat`, `ingredients` (`[[nome, quantità, unità]]`), `steps`, `oil`, `vis`, `archived` | casuale; le 17 di esempio `r` + vecchio id |
-| `ingredients` | `name`, `dept`, `prot` (fonte proteica), `c`/`p`/`f`/`fib` per 100 g, `unit_g` | `i` + hash del nome |
+| `recipes` | `name`, `ingredients` (`[[nome, quantità, unità]]`, olio compreso), `steps`, `vis`, `archived` | casuale; le 17 di esempio `r` + vecchio id |
+| `ingredients` | `name`, `cats` (id delle categorie), `c`/`p`/`f`/`fib` per 100 g, `unit_g` | `i` + hash del nome |
+| `categories` | `name`, `color` (0–9), `order`, `goal` (`{min, max}` a settimana) | casuale; le 7 iniziali `k` + nome |
 
 Gli id sono deterministici, così ogni telefono sa quale record aggiornare anche se è stato creato dall'altro. Ogni modifica finisce in una coda locale (`localStorage`) e parte appena c'è rete; il server rimanda le modifiche all'altro telefono in tempo reale. Se due modifiche toccano lo stesso campo, vince l'ultima.
 
-Ricette e ingredienti si creano, modificano ed eliminano dall'app (scheda Ricette, interruttore Ricette / Ingredienti). Eliminare una ricetta la archivia: resta visibile nei pasti già pianificati. Un ingrediente si può eliminare solo se nessuna ricetta attiva lo usa; rinominarlo aggiorna le ricette. La fonte proteica di una ricetta viene dagli ingredienti (`prot`), non si sceglie.
+Ricette e ingredienti si creano, modificano ed eliminano dall'app (scheda Ricette, interruttore Ricette / Ingredienti). Eliminare una ricetta la archivia: resta visibile nei pasti già pianificati. Un ingrediente si può eliminare solo se nessuna ricetta attiva lo usa; rinominarlo aggiorna le ricette. Le categorie (Impostazioni → Obiettivi settimanali e categorie) si assegnano agli ingredienti; una ricetta ha quelle dei suoi ingredienti, e gli obiettivi settimanali sono per categoria.

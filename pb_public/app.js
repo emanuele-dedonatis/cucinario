@@ -1,42 +1,43 @@
 (function(){
-/* ---------- Categorie proteiche ---------- */
-// i legumi sono divisi in tre: nelle tessere in alto stanno sulla prima riga
-const PROT = ["lenticchie","fagioli","ceci","pesce","carne","uova","latticini"];
-const PNAME = {lenticchie:"Lenticchie",fagioli:"Fagioli",ceci:"Ceci",pesce:"Pesce",carne:"Carne",uova:"Uova",latticini:"Latticini"};
-const PSING = {lenticchie:"lenticchie",fagioli:"fagioli",ceci:"ceci",pesce:"pesce",carne:"carne",uova:"uova",latticini:"latticini"};
-const CATS = ["Frutta e verdura","Pesce","Carne","Latticini e uova","Pane e pasta","Dispensa"];
+/* ---------- Categorie (collezione categories sul server) ----------
+   Le crea la famiglia da Impostazioni → Obiettivi settimanali: {name, color (indice della tavolozza --k0…--k9 in app.css),
+   order, goal:{min, max}}. Ogni ingrediente ha una lista di categorie e una ricetta ha quelle dei suoi ingredienti:
+   sono i tag di ricette e ingredienti, i filtri, i reparti della spesa e gli obiettivi della settimana. */
+const NCOL=10;
+let CAT=[],catById={}; // CAT = categorie in ordine
+const normGoal=g=>({min:(g&&g.min)||0,max:g&&g.max!=null?g.max:null});
+function rebuildCats(){CAT=Object.keys(S.cats).map(id=>({...S.cats[id],id,goal:normGoal(S.cats[id].goal)}))
+  .sort((a,b)=>(a.order||0)-(b.order||0)||a.name.localeCompare(b.name,"it"));catById=Object.fromEntries(CAT.map(c=>[c.id,c]))}
+const ingCats=x=>((x&&x.cats)||[]).filter(id=>catById[id]);
+// rows = [[nome, quantità, unità]]; look(nome) → ingrediente. Categorie nell'ordine della lista
+function recipeCats(rows,look){look=look||(n=>ING[n]);const s=new Set();for(const [n] of rows)for(const id of ingCats(look(n)))s.add(id);return CAT.filter(c=>s.has(c.id)).map(c=>c.id)}
 
 /* ---------- Ricette e ingredienti (collezioni recipes e ingredients sul server) ----------
-   Dentro l'app una ricetta è {id, n:nome, t:categoria, i:[[ingrediente, quantità, unità, reparto]], s:[passi], oil, v, archived},
-   con le quantità già per 2 adulti + 1 bambina (2,5 porzioni). v = illustrazione: b = base del piatto, c = colore base,
-   x = elementi [forma, colore, quantità, grandezza]; senza v si usa quella della categoria (DEFV).
-   La categoria non si sceglie: è la fonte proteica (prot) dell'ingrediente che porta più proteine (vedi recipeCat). */
+   Dentro l'app una ricetta è {id, n:nome, k:[categorie], i:[[ingrediente, quantità, unità]], s:[passi], v, archived},
+   con le quantità già per 2 adulti + 1 bambina (2,5 porzioni); l'olio è un ingrediente come gli altri.
+   v = illustrazione: b = base del piatto, c = colore base, x = elementi [forma, colore, quantità, grandezza];
+   senza v se ne usa una predefinita (DEFV). */
 const SERV=2.5,SERV_LBL="per 2 adulti e 1 bambina";
 let R=[],byId={},ING={}; // R = ricette attive (elenco, selettore, riempimento); byId comprende anche quelle eliminate; ING = catalogo per nome
 const grams=(q,u,x)=>(u==="g"||u==="ml")?q:q*((x&&x.unit_g)||100);
-// rows = [[nome, quantità, unità]]; look(nome) → valori dell'ingrediente. null se nessun ingrediente è una fonte proteica
-function recipeCat(rows,look){look=look||(n=>ING[n]);const sc={};
-  for(const [n,q,u] of rows){const x=look(n);if(x&&PROT.includes(x.prot))sc[x.prot]=(sc[x.prot]||0)+grams(+q||0,u,x)*((x.p||0)+.01)/100}
-  let best=null;for(const p in sc)if(best===null||sc[p]>sc[best])best=p;return best}
 function rebuildRecipes(){
+  rebuildCats();
   ING={};for(const id in S.ingr)ING[S.ingr[id].name]={...S.ingr[id],id};
   byId={};
   for(const id in S.recipes){const x=S.recipes[id],rows=x.ingredients||[];
-    byId[id]={id,n:x.name||"",t:recipeCat(rows),v:x.vis||null,s:x.steps||[],oil:x.oil??25,archived:!!x.archived,
-      i:rows.map(([n,q,u])=>[n,q,u,(ING[n]||{}).dept||"Dispensa"])}}
+    byId[id]={id,n:x.name||"",k:recipeCats(rows),v:x.vis||null,s:x.steps||[],archived:!!x.archived,i:rows.map(([n,q,u])=>[n,q,u])}}
   // pasti salvati quando le ricette stavano nel codice: "ceci" ora è il record "rceci0000000000"
   for(const id in S.recipes){const old=/^r([a-z]+)0*$/.exec(id);if(old&&!byId[old[1]])byId[old[1]]=byId[id]}
   R=Object.keys(S.recipes).map(id=>byId[id]).filter(r=>!r.archived).sort((a,b)=>a.n.localeCompare(b.n,"it"));
   for(const k in nutCache)delete nutCache[k];for(const k in svgCache)delete svgCache[k];
 }
 // ingredienti in comune tra due ricette (escludo erbe e piccole cose che non cambiano il lavoro in cucina)
-const MINOR=new Set(["Aglio","Basilico","Rosmarino","Prezzemolo","Limone","Farina","Capperi","Parmigiano","Burro","Vino bianco"]);
+const MINOR=new Set(["Aglio","Basilico","Rosmarino","Prezzemolo","Limone","Farina","Capperi","Parmigiano","Burro","Vino bianco","Olio extravergine"]);
 function shared(a,b){if(!a||!b||a.id===b.id)return[];const bn=new Set(b.i.map(x=>x[0]));return a.i.map(x=>x[0]).filter(n=>!MINOR.has(n)&&bn.has(n))}
 const LINK_ICO=`<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>`;
 const prevDinner=k=>{const v=(S.plan[key(addDays(new Date(k+"T12:00"),-1))]||{}).cena;return typeof v==="string"?byId[v]:null};
 
 /* ---------- Valori nutrizionali (dal catalogo ingredienti, per 100 g) ---------- */
-const OLIO={c:0,p:0,f:100,fib:0}; // olio extravergine: oil = grammi per tutta la ricetta, conteggiati nei valori
 const nutCache={};
 // look(nome) → {c,p,f,fib,unit_g}: l'editor passa anche gli ingredienti non ancora salvati
 function nutrition(r,look){
@@ -44,7 +45,6 @@ function nutrition(r,look){
   let C=0,P=0,F=0,Fi=0;
   const add=(x,g)=>{C+=(x.c||0)*g/100;P+=(x.p||0)*g/100;F+=(x.f||0)*g/100;Fi+=(x.fib||0)*g/100};
   for(const [n,q,u] of r.i){const x=(look||(n=>ING[n]))(n);if(x)add(x,grams(q,u,x))}
-  add(OLIO,r.oil??25);
   C/=SERV;P/=SERV;F/=SERV;Fi/=SERV; // per porzione
   const kc=C*4,kp=P*4,kf=F*9,tot=kc+kp+kf||1;
   const pc=Math.round(kc/tot*100),pp=Math.round(kp/tot*100);
@@ -92,17 +92,20 @@ function openRanges(back){
 }
 
 /* ---------- Illustrazioni dei piatti (SVG generato) ---------- */
-const TABLE = {pesce:["#c8dae6","#b5cad9"],lenticchie:["#ead8bd","#dcc5a3"],fagioli:["#efd3e2","#e3bfd2"],ceci:["#cfe8e2","#b9dcd3"],carne:["#ecd0cc","#dfbcb6"],uova:["#ddd3ec","#cbbfe0"],latticini:["#ece5bd","#ddd4a3"]};
+const TABLE = [["#c8dae6","#b5cad9"],["#ead8bd","#dcc5a3"],["#efd3e2","#e3bfd2"],["#cfe8e2","#b9dcd3"],["#ecd0cc","#dfbcb6"],["#ece5bd","#ddd4a3"],["#ddd3ec","#cbbfe0"],["#d6e8cf","#c2dbb8"],["#f3dcc6","#e9c7a6"],["#dfe3e6","#cdd3d8"]]; // tavolo, per colore della categoria
 function rng(seed){let h=2166136261;for(const c of seed)h=Math.imul(h^c.charCodeAt(0),16777619);return()=>{h+=0x6D2B79F5;let t=h;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
 // illustrazione per le ricette nuove, finché non hanno una foto
 const DEFV={lenticchie:{b:"half",c:"#7a5233",x:[["dot","#5c3c24",16,4],["dot","#e8873a",4,4]]},fagioli:{b:"soup",c:"#a4573b",x:[["bean","#c98a7a",9,7],["leaf","#4f7d3a",2,5]]},
   ceci:{b:"soup",c:"#d8b36a",x:[["dot","#e9cf8f",14,5],["leaf","#4f7d3a",2,5]]},pesce:{b:"none",x:[["fillet","#f4efe6",1,28],["dot","#e8463a",5,5],["leaf","#4f9a3a",3,5]]},
   carne:{b:"none",x:[["fillet","#c99a6a",2,18],["leaf","#4f9a3a",4,5]]},uova:{b:"disc",c:"#f0c548",x:[["dot","#e7b13a",6,4],["leaf","#6fa04a",3,5]]},
   latticini:{b:"none",x:[["cube","#f8f6ef",6,9],["round","#e0443a",3,8],["leaf","#3f8f3a",3,5]]}};
+// illustrazione predefinita e colore del tavolo dalla prima categoria della ricetta
+const DEFV_COL=[DEFV.pesce,DEFV.lenticchie,DEFV.fagioli,DEFV.ceci,DEFV.carne,DEFV.latticini,DEFV.uova];
 const svgCache={};
 function dishSvg(r){
   if(svgCache[r.id])return svgCache[r.id];
-  const rnd=rng(r.id),v=r.v||DEFV[r.t]||DEFV.ceci,[t1,t2]=TABLE[r.t]||TABLE.ceci;
+  const c0=catById[r.k[0]],col=c0?(c0.color||0)%NCOL:9;
+  const rnd=rng(r.id),v=r.v||DEFV_COL[col%DEFV_COL.length],[t1,t2]=TABLE[col];
   const W=160,H=100,cx=80,cy=50,PR=42;
   let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" preserveAspectRatio="xMidYMid slice">`;
   s+=`<rect width="${W}" height="${H}" fill="${t1}"/>`;
@@ -159,8 +162,8 @@ let today=new Date(),thisMonday=mondayOf(today);
    Collezioni sul server: plan (un record per giorno), shopping (uno per settimana: spunte e "a casa"),
    settings (unico record: obiettivi, intervalli, orari), photos (una foto per ricetta), recipes, ingredients.
    Le modifiche vanno in una coda locale (outbox) e partono appena c'è rete; vince l'ultima scrittura per campo. */
-const CACHE="cucinario-stato-v1",OUTBOX="cucinario-outbox-v1",COLS=["plan","shopping","settings","photos","recipes","ingredients"];
-const JSONF=new Set(["pranzo","cena","checks","have","goals","ranges","times","ingredients","steps","vis"]);
+const CACHE="cucinario-stato-v1",OUTBOX="cucinario-outbox-v1",COLS=["plan","shopping","settings","photos","recipes","ingredients","categories"];
+const JSONF=new Set(["pranzo","cena","checks","have","ranges","times","ingredients","steps","vis","cats","goal"]);
 const pb=new PocketBase(location.origin);pb.autoCancellation(false);
 // id dei record deterministici (15 caratteri a-z0-9), così ogni dispositivo sa quale record aggiornare
 const pad15=s=>(s.replace(/[^a-z0-9]/g,"")+"0".repeat(15)).slice(0,15);
@@ -168,15 +171,12 @@ function hash36(s){let a=0xdeadbeef,b=0x41c6ce57;for(const c of s){const x=c.cha
   a=Math.imul(a^a>>>16,2246822507)^Math.imul(b^b>>>13,3266489909);b=Math.imul(b^b>>>16,2246822507)^Math.imul(a^a>>>13,3266489909);
   return((b>>>0).toString(36)+(a>>>0).toString(36))}
 const ID={plan:k=>pad15("p"+k),shopping:w=>pad15("w"+w),settings:()=>"settings0000000",photos:r=>pad15("ph"+hash36(r)),ingredients:n=>pad15("i"+hash36(n))};
-const defaults=()=>({plan:{},checks:{},have:{},photos:{},recipes:{},ingr:{},shopMode:"casa",
-  goals:{lenticchie:{min:1,max:null},fagioli:{min:1,max:null},ceci:{min:1,max:null},pesce:{min:2,max:null},carne:{min:0,max:2},uova:{min:0,max:2},latticini:{min:0,max:3}},
+const defaults=()=>({plan:{},checks:{},have:{},photos:{},recipes:{},ingr:{},cats:{},shopMode:"casa",
   ranges:{c:[45,60],p:[15,25],f:[20,35],fib:8},times:{pranzo:"18:00",cena:"23:00"}});
 let S=defaults(),outbox=[],netOk=true;
 try{S=Object.assign(defaults(),JSON.parse(localStorage.getItem(CACHE))||{})}catch(e){}
 try{outbox=JSON.parse(localStorage.getItem(OUTBOX))||[]}catch(e){}
-// obiettivi salvati prima che i legumi fossero divisi in tre: tengo solo le categorie attuali, il resto dai default
-const normGoals=g=>{const d=defaults().goals;return Object.fromEntries(PROT.map(p=>[p,(g&&g[p])||d[p]]))};
-S.goals=normGoals(S.goals);
+delete S.goals; // gli obiettivi ora stanno nelle categorie
 rebuildRecipes();
 function save(){try{localStorage.setItem(CACHE,JSON.stringify(S))}catch(e){}}
 function queue(col,id,data,del){data=JSON.parse(JSON.stringify(data||{}));const e=outbox.find(x=>x.col===col&&x.id===id);
@@ -209,23 +209,25 @@ async function flush(){
 function applyRec(col,r,del){
   if(col==="plan"){if(del)delete S.plan[r.date];else S.plan[r.date]={pranzo:r.pranzo??null,cena:r.cena??null}}
   else if(col==="shopping"){if(del){delete S.checks[r.week];delete S.have[r.week]}else{S.checks[r.week]=r.checks||{};S.have[r.week]=r.have||{}}}
-  else if(col==="settings"){if(!del)for(const f of ["goals","ranges","times"])if(r[f])S[f]=f==="goals"?normGoals(r[f]):r[f]}
+  else if(col==="settings"){if(!del)for(const f of ["ranges","times"])if(r[f])S[f]=r[f]}
   else if(col==="photos"){if(del||!r.image)delete S.photos[r.recipe];else S.photos[r.recipe]=pb.files.getURL(r,r.image)}
-  else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,cat:r.cat,ingredients:r.ingredients||[],steps:r.steps||[],oil:r.oil,vis:r.vis,archived:r.archived}}
-  else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,dept:r.dept,prot:r.prot||"",c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
+  else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],vis:r.vis,archived:r.archived}}
+  else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,cats:r.cats||[],c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
+  else if(col==="categories"){if(del)delete S.cats[r.id];else S.cats[r.id]={name:r.name,color:r.color,order:r.order,goal:r.goal}}
 }
 // le modifiche locali non ancora inviate hanno la precedenza su quello che arriva dal server
 function applyPending(){for(const {col,id,data,del} of outbox){
-  if(del){if(col==="ingredients")delete S.ingr[id];else if(col==="recipes")delete S.recipes[id]}
+  if(del){if(col==="ingredients")delete S.ingr[id];else if(col==="recipes")delete S.recipes[id];else if(col==="categories")delete S.cats[id]}
   else if(col==="plan"){const p=S.plan[data.date]=S.plan[data.date]||{pranzo:null,cena:null};for(const m of ["pranzo","cena"])if(m in data)p[m]=data[m]}
   else if(col==="shopping"){for(const f of ["checks","have"])if(f in data)S[f][data.week]=data[f]}
-  else if(col==="settings"){Object.assign(S,data);S.goals=normGoals(S.goals)}
+  else if(col==="settings")Object.assign(S,data);
   else if(col==="recipes")S.recipes[id]=Object.assign(S.recipes[id]||{},data);
-  else if(col==="ingredients")S.ingr[id]=Object.assign(S.ingr[id]||{},data)}
+  else if(col==="ingredients")S.ingr[id]=Object.assign(S.ingr[id]||{},data);
+  else if(col==="categories")S.cats[id]=Object.assign(S.cats[id]||{},data)}
   rebuildRecipes()}
 async function pull(){
   const lists=await Promise.all(COLS.map(c=>pb.collection(c).getFullList({batch:1000})));
-  S.plan={};S.checks={};S.have={};S.photos={};S.recipes={};S.ingr={};
+  S.plan={};S.checks={};S.have={};S.photos={};S.recipes={};S.ingr={};S.cats={};
   COLS.forEach((c,i)=>lists[i].forEach(r=>applyRec(c,r)));
   applyPending();save();netOk=true;
 }
@@ -249,54 +251,92 @@ const slot=(k,m)=>(S.plan[k]||{})[m]||null;
 const rid=v=>typeof v==="string"&&byId[v]?byId[v].id:null; // id attuale (anche dai vecchi id), null se la ricetta non esiste
 const outNote=v=>v&&typeof v==="object"?(v.o||""):null;
 function setSlot(k,m,id){S.plan[k]=S.plan[k]||{pranzo:null,cena:null};S.plan[k][m]=id;save();queue("plan",ID.plan(k),{date:k,[m]:id})}
-const tagHtml=t=>t?`<span class="tag t-${t}">${PNAME[t]}</span>`:"";
-const catTag=t=>tagHtml(t)||`<span class="tag t-none">Nessuna fonte proteica</span>`;
+const tagHtml=id=>{const c=catById[id];return c?`<span class="tag k${(c.color||0)%NCOL}">${esc(c.name)}</span>`:""};
+const tagsHtml=ids=>ids.map(tagHtml).join("");
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),1900)}
 
-/* ---------- Obiettivi ---------- */
-function counts(){const c=Object.fromEntries(PROT.map(p=>[p,0]));weekKeys().forEach(k=>["pranzo","cena"].forEach(m=>{const id=rid(slot(k,m));if(id&&byId[id].t)c[byId[id].t]++}));return c}
-function status(p,c){const g=S.goals[p],n=c[p];
+/* ---------- Obiettivi (per categoria) ---------- */
+// un pasto conta una volta per ognuna delle sue categorie
+function counts(){const c=Object.fromEntries(CAT.map(x=>[x.id,0]));weekKeys().forEach(k=>["pranzo","cena"].forEach(m=>{const id=rid(slot(k,m));if(id)for(const x of byId[id].k)c[x]++}));return c}
+function status(cat,c){const g=cat.goal,n=c[cat.id]||0;
   if(g.min&&n<g.min)return{cls:"warn",txt:`manca ${g.min-n}`,need:g.min-n};
   if(g.max!=null&&n>g.max)return{cls:"warn",txt:`+${n-g.max} di troppo`,over:n-g.max};
   if(g.min||g.max!=null)return{cls:"ok",txt:"✓"};
   return{cls:"",txt:"libero"}}
 const goalLbl=g=>g.min&&g.max!=null?`${g.min}–${g.max}`:g.min?`≥${g.min}`:g.max!=null?`≤${g.max}`:"";
-// bilanciamento della settimana: un'icona accanto alla data; il resoconto per fonte proteica si apre toccandola
+// bilanciamento della settimana: un'icona accanto alla data; il resoconto per categoria si apre toccandola
 const BAL_ICO={ok:`<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 12.5 4 4 8-9"/></svg>`,
   warn:`<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v9"/><circle cx="12" cy="19" r=".6" fill="currentColor"/></svg>`,
   none:`<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v8M5.5 3v5a2.5 2.5 0 0 0 5 0V3M8 11v10M17 3c-2 0-3 3-3 7h3v11"/></svg>`};
-function weekBal(){const c=counts(),issues=PROT.map(p=>({p,...status(p,c)})).filter(s=>s.cls==="warn");
+function weekBal(){const c=counts(),issues=CAT.map(cat=>({cat,...status(cat,c)})).filter(s=>s.cls==="warn");
   const any=weekKeys().some(k=>["pranzo","cena"].some(m=>rid(slot(k,m))));
   return{c,issues,st:!any?"none":issues.length?"warn":"ok"}}
-const issueTxt=s=>`${PNAME[s.p]}: ${s.need?`manca${s.need>1?"no":""} ${s.need}`:`+${s.over} di troppo`}`;
+const issueTxt=s=>`${s.cat.name}: ${s.need?`manca${s.need>1?"no":""} ${s.need}`:`+${s.over} di troppo`}`;
 function renderGoals(){const {issues,st}=weekBal(),b=$("#wbal");
   b.className="wbal "+st;b.innerHTML=BAL_ICO[st];
   b.setAttribute("aria-label",st==="ok"?"Settimana bilanciata":st==="warn"?`Settimana da sistemare: ${issues.map(issueTxt).join(", ")}`:"Settimana vuota");
   b.title=b.getAttribute("aria-label");
 }
-const goalsHtml=c=>`<div class="goals">${PROT.map(p=>{const g=S.goals[p],st=status(p,c);
-  return `<span class="goal ${st.cls}"><span class="gname">${PNAME[p]}</span><span class="gnum">${c[p]}${goalLbl(g)?`<span> / ${goalLbl(g)}</span>`:""}</span><span class="gstate">${st.txt}</span></span>`}).join("")}</div>`;
+const goalsHtml=c=>CAT.length?`<div class="goals">${CAT.map(cat=>{const g=cat.goal,st=status(cat,c);
+  return `<span class="goal ${st.cls}"><span class="gname">${esc(cat.name)}</span><span class="gnum">${c[cat.id]||0}${goalLbl(g)?`<span> / ${goalLbl(g)}</span>`:""}</span><span class="gstate">${st.txt}</span></span>`}).join("")}</div>`
+  :`<p class="shopnote">Nessuna categoria: creale da «Modifica obiettivi» e assegnale agli ingredienti.</p>`;
 function openWeekBal(){const {c,issues,st}=weekBal(),a=weekStart(),b=addDays(a,6);
-  openSheet(`Fonti proteiche<small>${weekName(offset)} · ${a.getDate()} ${MONTHS[a.getMonth()]} – ${b.getDate()} ${MONTHS[b.getMonth()]}</small>`,
-    `<div class="verdict ${st==="ok"?"ok":"warn"}"><b>${st==="ok"?"Settimana bilanciata":st==="warn"?"Da sistemare":"Settimana vuota"}</b><span>${st==="ok"?"Tutti gli obiettivi sono rispettati.":st==="warn"?issues.map(issueTxt).join(" · "):"Nessun pasto ancora: prova «✦ Riempi»."}</span></div>
-     <p style="margin:12px 0 8px;color:var(--muted);font-size:13.5px">Quante volte in settimana, tra pranzi e cene, rispetto all'obiettivo.</p>${goalsHtml(c)}
+  openSheet(`Obiettivi della settimana<small>${weekName(offset)} · ${a.getDate()} ${MONTHS[a.getMonth()]} – ${b.getDate()} ${MONTHS[b.getMonth()]}</small>`,
+    `<div class="verdict ${st==="ok"?"ok":"warn"}"><b>${st==="ok"?"Settimana bilanciata":st==="warn"?"Da sistemare":"Settimana vuota"}</b><span>${st==="ok"?"Tutti gli obiettivi sono rispettati.":st==="warn"?esc(issues.map(issueTxt).join(" · ")):"Nessun pasto ancora: prova «✦ Riempi»."}</span></div>
+     <p style="margin:12px 0 8px;color:var(--muted);font-size:13.5px">Quante volte in settimana, tra pranzi e cene, per categoria.</p>${goalsHtml(c)}
      <div class="row" style="margin-top:14px"><button class="btn ghost" data-goals>Modifica obiettivi</button></div>`);
   $("#sheetBody").onclick=e=>{if(e.target.closest("[data-goals]"))openGoals(openWeekBal)};
 }
 $("#wbal").addEventListener("click",openWeekBal);
+// obiettivi e categorie: creare, rinominare, cambiare colore, eliminare
 function openGoals(back){
   if(typeof back!=="function")back=null;
-  const draw=()=>{$("#sheetBody").innerHTML=`<p style="margin:0 0 10px;color:var(--muted);font-size:13.5px">Quante volte a settimana, tra pranzi e cene. L'icona accanto alla data diventa arancione quando un obiettivo non è rispettato.</p><div class="grows">${PROT.map(p=>{const g=S.goals[p];
-    return `<div class="grow"><div class="gtop">${tagHtml(p)}<span style="color:var(--muted);font-size:13px">${goalLbl(g)?goalLbl(g)+" a settimana":"nessun vincolo"}</span></div>
-    <div class="gctl"><div class="stepper"><label>Almeno</label><div><button data-p="${p}" data-f="min" data-d="-1" aria-label="Meno">−</button><output>${g.min||"—"}</output><button data-p="${p}" data-f="min" data-d="1" aria-label="Più">+</button></div></div>
-    <div class="stepper"><label>Al massimo</label><div><button data-p="${p}" data-f="max" data-d="-1" aria-label="Meno">−</button><output>${g.max==null?"—":g.max}</output><button data-p="${p}" data-f="max" data-d="1" aria-label="Più">+</button></div></div></div></div>`}).join("")}</div>
-    ${back?`<div style="margin-top:12px"><button class="btn" data-back>Torna al resoconto</button></div>`:""}`};
+  const self=()=>openGoals(back);
+  const draw=()=>{$("#sheetBody").innerHTML=`<p style="margin:0 0 10px;color:var(--muted);font-size:13.5px">Le categorie si assegnano agli ingredienti e una ricetta ha quelle dei suoi ingredienti. Per ognuna puoi fissare quante volte a settimana, tra pranzi e cene. Tocca il nome per rinominarla o eliminarla.</p>
+    ${CAT.length?`<div class="grows">${CAT.map(cat=>{const g=cat.goal;
+    return `<div class="grow"><div class="gtop"><button class="catbtn" data-cat="${cat.id}" aria-label="Modifica ${esc(cat.name)}">${tagHtml(cat.id)}<span>✎</span></button><span style="color:var(--muted);font-size:13px">${goalLbl(g)?goalLbl(g)+" a settimana":"nessun vincolo"}</span></div>
+    <div class="gctl"><div class="stepper"><label>Almeno</label><div><button data-c="${cat.id}" data-f="min" data-d="-1" aria-label="Meno">−</button><output>${g.min||"—"}</output><button data-c="${cat.id}" data-f="min" data-d="1" aria-label="Più">+</button></div></div>
+    <div class="stepper"><label>Al massimo</label><div><button data-c="${cat.id}" data-f="max" data-d="-1" aria-label="Meno">−</button><output>${g.max==null?"—":g.max}</output><button data-c="${cat.id}" data-f="max" data-d="1" aria-label="Più">+</button></div></div></div></div>`}).join("")}</div>`
+    :`<p class="empty-note" style="padding:20px 10px">Nessuna categoria.</p>`}
+    <div class="row" style="margin-top:12px"><button class="btn ghost" data-newcat>＋ Nuova categoria</button>${back?`<button class="btn" data-back>Torna al resoconto</button>`:""}</div>`};
   openSheet("Obiettivi settimanali","");draw();
   $("#sheetBody").onclick=e=>{if(e.target.closest("[data-back]")){back();return}
-    const b=e.target.closest("[data-p]");if(!b)return;const g=S.goals[b.dataset.p],d=+b.dataset.d;
+    if(e.target.closest("[data-newcat]")){openCat(null,self);return}
+    const cb=e.target.closest("[data-cat]");if(cb){openCat(cb.dataset.cat,self);return}
+    const b=e.target.closest("[data-c]");if(!b)return;const id=b.dataset.c,g=normGoal(S.cats[id].goal),d=+b.dataset.d;
     if(b.dataset.f==="min"){g.min=Math.max(0,Math.min(14,(g.min||0)+d));if(g.max!=null&&g.max<g.min)g.max=g.min}
     else{ if(g.max==null){if(d<0)g.max=7}else{g.max+=d;if(g.max>7)g.max=null;else if(g.max<0)g.max=0} if(g.max!=null&&g.min>g.max)g.min=g.max}
-    save();queueSettings("goals");draw();renderGoals()};
+    S.cats[id].goal=g;queue("categories",id,{goal:g});rebuildCats();save();draw();renderGoals();renderSettings()};
+}
+function openCat(id,back){
+  const old=id?S.cats[id]:null,v={name:old?old.name:"",color:old?(old.color||0)%NCOL:CAT.length%NCOL};
+  const users=old?Object.keys(S.ingr).filter(i=>(S.ingr[i].cats||[]).includes(id)).map(i=>S.ingr[i].name).sort((a,b)=>a.localeCompare(b,"it")):[];
+  openSheet(old?`Categoria<small>${esc(old.name)}</small>`:"Nuova categoria",`<div class="editor">
+    <label class="ef"><span>Nome</span><input class="txt" id="caName" value="${esc(v.name)}" placeholder="Es. Pesce" autocomplete="off"></label>
+    <div class="ef"><span>Colore</span><div class="swatches">${Array.from({length:NCOL},(_,i)=>`<button class="swatch k${i}" data-col="${i}" aria-pressed="${i===v.color}" aria-label="Colore ${i+1}"></button>`).join("")}</div></div>
+    ${old?`<div class="ef"><span>${users.length?`Ingredienti con questa categoria (${users.length})`:"Nessun ingrediente ha questa categoria"}</span>${users.length?`<p class="shopnote" style="margin:0">${esc(users.join(", "))}</p>`:""}</div>`:""}
+    <p class="hint" id="caErr" hidden></p>
+    <div class="row"><button class="btn" data-save>Salva</button><button class="btn ghost" data-cancel>Annulla</button>${old?`<button class="btn ghost" data-delete>Elimina</button>`:""}</div>
+    <div id="delBox"></div></div>`);
+  if(!old)setTimeout(()=>($("#caName")||{focus(){}}).focus(),260);
+  const body=$("#sheetBody"),fail=msg=>{const el=$("#caErr");el.textContent=msg;el.hidden=false};
+  body.oninput=e=>{if(e.target.id==="caName")v.name=e.target.value};
+  body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if(b.dataset.col){v.color=+b.dataset.col;body.querySelectorAll("[data-col]").forEach(x=>x.setAttribute("aria-pressed",x===b))}
+    else if("cancel" in b.dataset)back();
+    else if("delete" in b.dataset){$("#delBox").innerHTML=`<div class="confirm"><p>Eliminare la categoria <b>${esc(old.name)}</b>?${users.length?` Verrà tolta da ${users.length===1?"un ingrediente":users.length+" ingredienti"}.`:""} Il suo obiettivo sparisce.</p>
+      <div class="row"><button class="btn danger" data-confirm>Elimina</button><button class="btn ghost" data-nodel>Annulla</button></div></div>`;$("#delBox").scrollIntoView({block:"nearest",behavior:"smooth"})}
+    else if("nodel" in b.dataset)$("#delBox").innerHTML="";
+    else if("confirm" in b.dataset){
+      for(const i in S.ingr){const cs=S.ingr[i].cats||[];if(cs.includes(id)){const cats=cs.filter(x=>x!==id);S.ingr[i].cats=cats;queue("ingredients",i,{cats})}}
+      delete S.cats[id];queue("categories",id,null,true);if(recFilter===id)recFilter=null;if(ingFilter===id)ingFilter=null;
+      rebuildRecipes();save();renderAll();toast("Categoria eliminata");back()}
+    else if("save" in b.dataset){
+      const name=v.name.trim().replace(/\s+/g," ");if(!name)return fail("Manca il nome della categoria.");
+      const dup=CAT.find(c=>c.id!==id&&c.name.toLowerCase()===name.toLowerCase());if(dup)return fail(`C'è già la categoria «${dup.name}».`);
+      const nid=id||randId(),data=old?{name,color:v.color}:{name,color:v.color,order:Math.max(-1,...CAT.map(c=>c.order||0))+1,goal:{min:0,max:null}};
+      S.cats[nid]=Object.assign(S.cats[nid]||{},data);queue("categories",nid,data);
+      rebuildRecipes();save();renderAll();toast(old?"Categoria salvata":"Categoria aggiunta");back()}};
 }
 
 /* ---------- Header ---------- */
@@ -325,10 +365,10 @@ function openTimes(){
 }
 /* ---------- Impostazioni ---------- */
 function renderSettings(){
-  const g=S.goals,r=S.ranges;
-  const gs=PROT.map(p=>{const l=goalLbl(g[p]);return l?`${PNAME[p]} ${l}`:null}).filter(Boolean).join(" · ")||"Nessun vincolo";
+  const r=S.ranges;
+  const gs=CAT.map(c=>{const l=goalLbl(c.goal);return l?`${c.name} ${l}`:null}).filter(Boolean).join(" · ")||(CAT.length?"Nessun vincolo":"Nessuna categoria");
   $("#setList").innerHTML=`
-   <button class="setitem" data-s="goals"><span><b>Obiettivi settimanali</b><small>${gs}</small></span></button>
+   <button class="setitem" data-s="goals"><span><b>Obiettivi settimanali e categorie</b><small>${esc(gs)}</small></span></button>
    <button class="setitem" data-s="ranges"><span><b>Pasto bilanciato</b><small>Carboidrati ${r.c[0]}–${r.c[1]}% · Proteine ${r.p[0]}–${r.p[1]}% · Grassi ${r.f[0]}–${r.f[1]}% · Fibre ≥${r.fib} g</small></span></button>
    <button class="setitem" data-s="times"><span><b>Orari dei pasti</b><small>Il pranzo passa alle ${S.times.pranzo}, la cena alle ${S.times.cena}</small></span></button>
    <button class="setitem" data-s="account"><span><b>Account</b><small>${esc(pb.authStore.record?.email||"")}</small></span></button>`;
@@ -354,7 +394,7 @@ function renderWeek(){
       <div class="dayhead"><span class="dname">${DAYS[i]}</span><span class="ddate">${d.getDate()} ${MONTHS[d.getMonth()]}</span>${isT?'<span class="badge">Oggi</span>':""}</div>
       <div class="slots">${["pranzo","cena"].map(m=>{const v=slot(k,m),o=outNote(v),r=rid(v)&&byId[rid(v)],past=isT&&isPast(k,m)?" past":"";
         if(o!==null)return `<button class="slot${past}" data-k="${k}" data-m="${m}"><span class="meal">${m}</span>${outPh()}<span class="rname">${esc(o||"Pasto fuori casa")}</span></button>`;
-        return r?`<button class="slot${past}" data-k="${k}" data-m="${m}"><span class="meal">${m}</span><div class="ph">${S.photos[r.id]?`<img src="${S.photos[r.id]}" alt="">`:dishSvg(r)}${tagHtml(r.t)}</div><span class="rname">${esc(r.n)}</span>${m==="pranzo"&&shared(r,prevDinner(k)).length?`<span class="link">${LINK_ICO}con la cena di ieri</span>`:""}</button>`
+        return r?`<button class="slot${past}" data-k="${k}" data-m="${m}"><span class="meal">${m}</span><div class="ph">${S.photos[r.id]?`<img src="${S.photos[r.id]}" alt="">`:dishSvg(r)}${r.k.length?`<span class="tags">${tagsHtml(r.k.slice(0,2))}</span>`:""}</div><span class="rname">${esc(r.n)}</span>${m==="pranzo"&&shared(r,prevDinner(k)).length?`<span class="link">${LINK_ICO}con la cena di ieri</span>`:""}</button>`
                 :`<button class="slot empty${past}" data-k="${k}" data-m="${m}"><span class="meal">${m}</span><div class="ph">+ Scegli</div></button>`}).join("")}</div></div>`}).join("");
 }
 // l'app installata può restare aperta per giorni: se è cambiato il giorno torno alla settimana di oggi
@@ -364,45 +404,35 @@ $("#days").addEventListener("click",e=>{const b=e.target.closest(".slot");if(!b)
   if(outNote(v)!==null)openOut(k,m);else if(rid(v))openDetail(k,m);else openPicker(k,m)});
 
 /* ---------- Riempimento automatico che rispetta gli obiettivi ---------- */
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+/* Cerco la combinazione di ricette che costa meno, partendo da scelte a caso e cambiando un pasto alla volta.
+   Costi, dal più pesante: obiettivi non rispettati (minimi e massimi), stessa categoria a pranzo e a cena dello
+   stesso giorno (contando anche i pasti scelti a mano), stessa ricetta ripetuta; un piccolo premio se il pranzo
+   condivide ingredienti con la cena della sera prima, e un costo leggero sulle categorie già molto presenti (varietà). */
 function autofill(all){
   const keys=weekKeys();
   // "rifai tutto" tiene i pasti fuori casa
   if(all)keys.forEach(k=>["pranzo","cena"].forEach(m=>{if(outNote(slot(k,m))===null&&slot(k,m))setSlot(k,m,null)}));
-  const empty=[];keys.forEach(k=>["pranzo","cena"].forEach(m=>{if(!slot(k,m))empty.push([k,m])}));
+  const empty=[];keys.forEach(k=>["pranzo","cena"].forEach(m=>{if(!slot(k,m))empty.push(k+"|"+m)}));
   if(!empty.length){toast("La settimana è già piena");return}
-  const has=PROT.filter(p=>R.some(r=>r.t===p));
-  if(!has.length){toast("Nessuna ricetta da usare");return}
-  const c=counts(),cats=[];
-  for(const p of shuffle([...has])){const need=Math.max(0,(S.goals[p].min||0)-c[p]);for(let i=0;i<need&&cats.length<empty.length;i++){cats.push(p);c[p]++}}
-  while(cats.length<empty.length){
-    const ok=has.filter(p=>S.goals[p].max==null||c[p]<S.goals[p].max);
-    let from=ok.length?ok:has;
-    const under7=from.filter(p=>c[p]<7);if(under7.length)from=under7; // più di 7 costringerebbe a ripetere nello stesso giorno
-    // scelta pesata: le categorie già usate poco hanno più probabilità, per una settimana varia
-    const wts=from.map(p=>1/(1+c[p])),tot=wts.reduce((a,b)=>a+b,0);let x=Math.random()*tot,p=from[from.length-1];
-    for(let j=0;j<from.length;j++){x-=wts[j];if(x<=0){p=from[j];break}}
-    cats.push(p);c[p]++;
-  }
-  // distribuisco le categorie evitando la stessa proteina a pranzo e a cena dello stesso giorno
-  const fixedCat=(k,m)=>{const id=rid(slot(k,m));return id?byId[id].t:null};
-  const conflicts=arr=>{let n=0;const day={};empty.forEach(([k,m],i)=>{(day[k]=day[k]||{})[m]=arr[i]});
-    for(const k in day){const p=day[k].pranzo??fixedCat(k,"pranzo"),c2=day[k].cena??fixedCat(k,"cena");if(p&&c2&&p===c2)n++}return n};
-  let best=shuffle([...cats]),bestN=conflicts(best);
-  for(let t=0;t<300&&bestN>0;t++){const a=shuffle([...cats]),n=conflicts(a);if(n<bestN){best=a;bestN=n}}
-  cats.splice(0,cats.length,...best);
-  const used=new Set();keys.forEach(k=>["pranzo","cena"].forEach(m=>{const id=rid(slot(k,m));if(id)used.add(id)}));
-  // in ordine cronologico: il pranzo cerca ingredienti in comune con la cena della sera prima (e viceversa)
-  const order=empty.map((s,i)=>({k:s[0],m:s[1],cat:cats[i]})).sort((a,b)=>a.k===b.k?(a.m==="pranzo"?-1:1):a.k<b.k?-1:1);
-  for(const s of order){
-    let cand=R.filter(r=>r.t===s.cat&&!used.has(r.id));if(!cand.length)cand=R.filter(r=>r.t===s.cat);
-    const partner=s.m==="pranzo"?rid(slot(key(addDays(new Date(s.k+"T12:00"),-1)),"cena")):rid(slot(key(addDays(new Date(s.k+"T12:00"),1)),"pranzo"));
-    let pick;
-    if(partner){const sc=cand.map(r=>shared(r,byId[partner]).length),mx=Math.max(...sc);
-      const top=cand.filter((r,i)=>sc[i]===mx);pick=top[Math.floor(Math.random()*top.length)]}
-    else pick=cand[Math.floor(Math.random()*cand.length)];
-    used.add(pick.id);setSlot(s.k,s.m,pick.id);
-  }
+  if(!R.length){toast("Nessuna ricetta da usare");return}
+  const pos=Object.fromEntries(empty.map((s,i)=>[s,i]));
+  const prevKey=k=>key(addDays(new Date(k+"T12:00"),-1));
+  const at=(a,k,m)=>{const i=pos[k+"|"+m];if(i!==undefined)return a[i];const id=rid(slot(k,m));return id?byId[id]:null};
+  const fixed=[];keys.forEach(k=>["pranzo","cena"].forEach(m=>{const id=pos[k+"|"+m]===undefined&&rid(slot(k,m));if(id)fixed.push(byId[id])}));
+  const lk={},link=(a,b)=>{const x=a.id+b.id;return x in lk?lk[x]:(lk[x]=Math.min(3,shared(a,b).length))};
+  const cost=a=>{let s=0;const c={},used={};
+    for(const r of fixed.concat(a)){used[r.id]=(used[r.id]||0)+1;for(const id of r.k)c[id]=(c[id]||0)+1}
+    for(const cat of CAT){const n=c[cat.id]||0,g=cat.goal;if(n<g.min)s+=100*(g.min-n);if(g.max!=null&&n>g.max)s+=100*(n-g.max);s+=n*n*.3}
+    for(const id in used)if(used[id]>1)s+=20*(used[id]-1);
+    for(const k of keys){const p=at(a,k,"pranzo"),d=at(a,k,"cena");if(p&&d)s+=30*p.k.filter(x=>d.k.includes(x)).length;
+      const ieri=at(a,prevKey(k),"cena");if(p&&ieri)s-=3*link(p,ieri)}
+    return s};
+  const pick=()=>R[Math.floor(Math.random()*R.length)];
+  let best=null,bestC=Infinity;
+  for(let t=0;t<6;t++){const a=empty.map(pick);let c=cost(a);
+    for(let it=0;it<1500;it++){const i=Math.floor(Math.random()*a.length),old=a[i];a[i]=pick();const c2=cost(a);if(c2<=c)c=c2;else a[i]=old}
+    if(c<bestC){best=a;bestC=c}}
+  empty.forEach((s,i)=>{const [k,m]=s.split("|");setSlot(k,m,best[i].id)});
   save();renderAll();toast(`Aggiunti ${empty.length} pasti`);
 }
 function weekName(o){return o===0?"Questa settimana":o===1?"Prossima settimana":o===-1?"Settimana scorsa":(o>0?`Tra ${o} settimane`:`${-o} settimane fa`)}
@@ -438,21 +468,23 @@ function openSheet(title,html){$("#sheetTitle").innerHTML=title;$("#sheetBody").
 function closeSheet(){$("#sheet").classList.remove("open");$("#scrim").classList.remove("open")}
 $("#scrim").onclick=closeSheet;$("#closeSheet").onclick=closeSheet;
 const slotLabel=(k,m)=>{const d=new Date(k+"T12:00");return `${DAYS[(d.getDay()+6)%7]} ${d.getDate()} ${MONTHS[d.getMonth()]} · ${m}`};
-function filtersHtml(active){return [null,...PROT].map(t=>`<button data-f="${t||""}" aria-pressed="${(t||null)===active}">${t?PNAME[t]:"Tutte"}</button>`).join("")}
-function cardHtml(r,cur,showBal,extra){const ok=!checkBalance(nutrition(r)).length;return `<button class="rcard${cur?" current":""}" data-id="${r.id}">${photoHtml(r)}<span class="rinfo"><span class="rname">${esc(r.n)}</span><span class="row" style="gap:6px">${catTag(r.t)}</span>${extra||""}</span>${showBal&&!ok?`<span class="warnico" title="Da rivedere" aria-label="Da rivedere"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z" fill="currentColor"/><path d="M12 9v5" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="1.4" fill="var(--surface)"/></svg></span>`:""}</button>`}
+function filtersHtml(active,all){return [null,...CAT.map(c=>c.id)].map(t=>`<button data-f="${t||""}" aria-pressed="${(t||null)===active}">${t?esc(cname(t)):(all||"Tutte")}</button>`).join("")}
+const cname=id=>catById[id]?catById[id].name:"";
+function cardHtml(r,cur,showBal,extra){const ok=!checkBalance(nutrition(r)).length;return `<button class="rcard${cur?" current":""}" data-id="${r.id}">${photoHtml(r)}<span class="rinfo"><span class="rname">${esc(r.n)}</span><span class="row" style="gap:6px">${tagsHtml(r.k)}</span>${extra||""}</span>${showBal&&!ok?`<span class="warnico" title="Da rivedere" aria-label="Da rivedere"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z" fill="currentColor"/><path d="M12 9v5" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="1.4" fill="var(--surface)"/></svg></span>`:""}</button>`}
 
 function openPicker(k,m,f){
   const cur=rid(slot(k,m)),c=counts();
-  if(cur&&byId[cur].t)c[byId[cur].t]--; // il pasto che sto sostituendo non conta
-  const miss=PROT.filter(p=>S.goals[p].min&&c[p]<S.goals[p].min);
+  if(cur)for(const x of byId[cur].k)c[x]--; // il pasto che sto sostituendo non conta
+  const miss=CAT.filter(x=>x.goal.min&&(c[x.id]||0)<x.goal.min),missId=new Set(miss.map(x=>x.id));
   // ricette che condividono ingredienti con la cena di ieri (per il pranzo) o col pranzo di domani (per la cena)
   const nextLunch=()=>{const v=(S.plan[key(addDays(new Date(k+"T12:00"),1))]||{}).pranzo;return typeof v==="string"?byId[v]:null};
   const partner=m==="pranzo"?prevDinner(k):nextLunch(),pl=m==="pranzo"?"la cena di ieri":"il pranzo di domani";
   const sh=Object.fromEntries(R.map(r=>[r.id,shared(r,partner)]));
-  const list=R.filter(r=>!f||r.t===f).sort((a,b)=>(miss.includes(b.t))-(miss.includes(a.t))||sh[b.id].length-sh[a.id].length);
+  const needs=r=>r.k.some(x=>missId.has(x));
+  const list=R.filter(r=>!f||r.k.includes(f)).sort((a,b)=>needs(b)-needs(a)||sh[b.id].length-sh[a.id].length);
   openSheet(`Scegli la ricetta<small>${slotLabel(k,m)}</small>`,
     `<button class="rcard outcard" data-out>${outPh()}<span class="rinfo"><span class="rname">Pasto fuori casa</span><span class="meta">Ristorante, da amici, salto il pasto… non conta per obiettivi e spesa</span></span></button>`+
-    (miss.length&&!f?`<div class="hint">Questa settimana manca ancora: ${miss.map(p=>`${PSING[p]} (${S.goals[p].min-c[p]})`).join(", ")}</div>`:"")+
+    (miss.length&&!f?`<div class="hint">Questa settimana manca ancora: ${esc(miss.map(x=>`${x.name.toLowerCase()} (${x.goal.min-(c[x.id]||0)})`).join(", "))}</div>`:"")+
     `<div class="filters">${filtersHtml(f||null)}</div><div class="pick">${list.map(r=>cardHtml(r,r.id===cur,false,sh[r.id].length?`<span class="link">${LINK_ICO}${esc(sh[r.id].slice(0,3).join(", ").toLowerCase())} come ${pl}</span>`:"")).join("")}</div>`);
   $("#sheetBody").onclick=e=>{
     if(e.target.closest("[data-out]")){openOut(k,m);return}
@@ -477,7 +509,7 @@ function openOut(k,m){
     else if(e.target.closest("[data-remove]")){setSlot(k,m,null);closeSheet();renderAll();toast("Pasto tolto")}};
 }
 function fmtQty(q,u){const n=Math.round(q*10)/10;if(u==="g"&&n>=1000)return(n/1000).toString().replace(".",",")+" kg";return `${String(n).replace(".",",")} ${u}`}
-function recipeHtml(r){return photoHtml(r,"hero")+`<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="row">${catTag(r.t)}<span style="color:var(--muted);font-size:13px">${SERV_LBL}</span></span>
+function recipeHtml(r){return photoHtml(r,"hero")+`<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="row">${tagsHtml(r.k)}<span style="color:var(--muted);font-size:13px">${SERV_LBL}</span></span>
   <label class="btn ghost filebtn" style="padding:6px 12px;font-size:13px">${S.photos[r.id]?"Cambia foto":"Aggiungi foto"}<input type="file" accept="image/*" data-photo="${r.id}"></label></div>
   ${nutHtml(nutrition(r))}
   <ul class="ing">${r.i.map(x=>`<li><span>${esc(x[0])}</span><span>${fmtQty(x[1],x[2])}</span></li>`).join("")}</ul>
@@ -525,34 +557,33 @@ const num=x=>String(+x||0).replace(".",",");
 const randId=()=>{const a="abcdefghijklmnopqrstuvwxyz0123456789";return Array.from(crypto.getRandomValues(new Uint8Array(15)),x=>a[x%36]).join("")};
 // nome come sta nel catalogo (ignoro maiuscole e spazi doppi), così "cipolla" usa "Cipolla"
 const canon=n=>{n=String(n).trim().replace(/\s+/g," ");const k=n.toLowerCase();return Object.keys(ING).find(x=>x.toLowerCase()===k)||n};
-const INGF=["dept","prot","c","p","f","fib","unit_g"];
-// reparto, fonte proteica, valori per 100 g e peso di un'unità; a = attributi in più sugli input (es. la riga dell'editor)
-function ingFieldsHtml(v,a){a=a||"";
+const INGF=["c","p","f","fib","unit_g"];
+// categorie, valori per 100 g e peso di un'unità; a = attributi in più (es. la riga dell'editor)
+function ingFieldsHtml(v,a){a=a||"";const has=new Set(v.cats||[]);
   const num=(k,l,ph,cls)=>`<label${cls?` class="${cls}"`:""}><span>${l}</span><input class="txt" type="number" inputmode="decimal" min="0" step="any" ${a} data-v="${k}" value="${v[k]||""}" placeholder="${ph||0}"></label>`;
-  return `<label><span>Reparto</span><select class="txt" ${a} data-v="dept">${CATS.map(c=>`<option${c===v.dept?" selected":""}>${c}</option>`).join("")}</select></label>
-    <label><span>Fonte proteica</span><select class="txt" ${a} data-v="prot"><option value="">Nessuna</option>${PROT.map(p=>`<option value="${p}"${p===v.prot?" selected":""}>${PNAME[p]}</option>`).join("")}</select></label>
+  return `<div class="wide ichips"><span>Categorie</span><div>${CAT.length?CAT.map(c=>`<button type="button" class="chip k${(c.color||0)%NCOL}" ${a} data-icat="${c.id}" aria-pressed="${has.has(c.id)}">${esc(c.name)}</button>`).join("")
+    :`<small>Nessuna categoria: si creano da Impostazioni → Obiettivi settimanali.</small>`}</div></div>
     ${NUTF.map(([k,l])=>num(k,l+" (g)")).join("")}${num("unit_g","Peso di 1 unità in grammi (pz, mazzo, spicchio…)","—","wide")}`}
-const ingData=(name,v)=>({name,dept:v.dept||"Dispensa",prot:PROT.includes(v.prot)?v.prot:"",c:+v.c||0,p:+v.p||0,f:+v.f||0,fib:+v.fib||0,unit_g:+v.unit_g||0});
-const sameIng=(a,b)=>a&&b&&a.name===b.name&&INGF.every(k=>(a[k]||0)===(b[k]||0));
+const ingData=(name,v)=>({name,cats:CAT.filter(c=>(v.cats||[]).includes(c.id)).map(c=>c.id),c:+v.c||0,p:+v.p||0,f:+v.f||0,fib:+v.fib||0,unit_g:+v.unit_g||0});
+const sameIng=(a,b)=>a&&b&&a.name===b.name&&JSON.stringify(ingCats(a))===JSON.stringify(b.cats)&&INGF.every(k=>(a[k]||0)===(b[k]||0));
+const toggleCat=(v,id)=>{const s=new Set(v.cats||[]);s.has(id)?s.delete(id):s.add(id);v.cats=[...s]};
 // id deterministico dal nome; se è già preso (ingrediente rinominato) ne uso uno casuale
 const newIngId=n=>{const id=ID.ingredients(n);return S.ingr[id]?randId():id};
 // tutte le ricette che usano l'ingrediente, anche quelle eliminate; activeUses solo quelle attive (catalogo, eliminazione)
 const activeUses=n=>usesOf(n).filter(r=>!r.archived);
 const usesOf=n=>Object.keys(S.recipes).filter(id=>(S.recipes[id].ingredients||[]).some(x=>x[0]===n)).map(id=>byId[id]);
-// dopo un cambio al catalogo: le ricette che usano quegli ingredienti tengono aggiornata la copia della categoria sul server
-function syncCats(names){for(const n of names)for(const r of usesOf(n)){const cat=r.t||"";
-  if((S.recipes[r.id].cat||"")!==cat){S.recipes[r.id].cat=cat;queue("recipes",r.id,{cat})}}}
 function openEditor(id,back){
   const r=id?byId[id]:null;
-  const d={n:r?r.n:"",oil:r?r.oil:25,s:r?r.s.join("\n"):"",open:-1,
+  const d={n:r?r.n:"",s:r?r.s.join("\n"):"",open:-1,
     rows:r?r.i.map(([n,q,u])=>({n,q:String(q),u})):[{n:"",q:"",u:"g"}],
     ing:{}}; // valori degli ingredienti nuovi o modificati qui, per nome; finiscono nel catalogo al salvataggio
   const vals=n=>d.ing[n]||ING[n]||null;
   const valid=()=>d.rows.filter(x=>x.n.trim()&&+x.q>0);
   const info=x=>{const n=canon(x.n);if(!n)return["",""];const v=vals(n);
-    if(!v)return["warn","Nuovo ingrediente: tocca qui per reparto e valori"];
+    if(!v)return["warn","Nuovo ingrediente: tocca qui per categorie e valori"];
     if(!(x.u==="g"||x.u==="ml")&&!v.unit_g)return["warn",`Quanto pesa 1 ${x.u}? Tocca qui`];
-    return["",`${v.dept}${v.prot?" · fonte proteica: "+PSING[v.prot]:""} · per 100 g: carb ${num(v.c)} · prot ${num(v.p)} · grassi ${num(v.f)} · fibre ${num(v.fib)}`]};
+    const cs=ingCats(v).map(cname).join(", ");
+    return["",`${cs?cs+" · ":""}per 100 g: carb ${num(v.c)} · prot ${num(v.p)} · grassi ${num(v.f)} · fibre ${num(v.fib)}`]};
   const valsHtml=i=>{const n=canon(d.rows[i].n),v=d.ing[n];
     return `<div class="evals"><p>${ING[n]?`Valori di <b>${esc(n)}</b> nel catalogo: cambiano per tutte le ricette che lo usano.`:`<b>${esc(n)}</b> non è ancora nel catalogo. Valori per 100 g, come sull'etichetta.`}</p>
       ${ingFieldsHtml(v,`data-i="${i}"`)}</div>`};
@@ -565,19 +596,18 @@ function openEditor(id,back){
      ${d.open===i&&canon(x.n)?valsHtml(i):""}</div>`};
   const refresh=()=>{
     const rows=valid();
-    const cat=recipeCat(rows.map(x=>[canon(x.n),+x.q,x.u]),vals),from=[...new Set(rows.map(x=>canon(x.n)).filter(n=>(vals(n)||{}).prot===cat))];
-    $("#edCat").innerHTML=cat?`<span class="row">${tagHtml(cat)}<small class="muted">da ${esc(from.join(", ").toLowerCase())}</small></span>`
-      :`<p class="catwarn">Nessun ingrediente è una fonte proteica: la ricetta non conterà per gli obiettivi e il riempimento automatico non la userà. Per indicarla, tocca la riga sotto l'ingrediente principale.</p>`;
-    $("#edNut").innerHTML=rows.length?nutHtml(nutrition({oil:+d.oil||0,i:rows.map(x=>[canon(x.n),+x.q,x.u])},vals),true)
+    const cats=recipeCats(rows.map(x=>[canon(x.n)]),vals);
+    $("#edCat").innerHTML=cats.length?`<span class="row">${tagsHtml(cats)}</span>`
+      :`<p class="catwarn">Nessun ingrediente ha una categoria: la ricetta non conterà per gli obiettivi. Per assegnarle, tocca la riga sotto un ingrediente.</p>`;
+    $("#edNut").innerHTML=rows.length?nutHtml(nutrition({i:rows.map(x=>[canon(x.n),+x.q,x.u])},vals),true)
       :`<p class="shopnote">Aggiungi gli ingredienti con le quantità: qui vedrai se il pasto è bilanciato.</p>`;
     document.querySelectorAll("#sheetBody .einfo").forEach((b,i)=>{const [cls,txt]=info(d.rows[i]);b.className="einfo "+cls;b.textContent=txt;b.hidden=!txt})};
   const draw=()=>{
     $("#sheetBody").innerHTML=`<div class="editor">
       <label class="ef"><span>Nome</span><input class="txt" id="edName" value="${esc(d.n)}" placeholder="Es. Pasta e ceci" autocomplete="off"></label>
-      <div class="ef"><span>Fonte proteica <small>dagli ingredienti</small></span><div id="edCat"></div></div>
+      <div class="ef"><span>Categorie <small>dagli ingredienti</small></span><div id="edCat"></div></div>
       <div class="ef"><span>Ingredienti <small>${SERV_LBL}</small></span><div class="erows">${d.rows.map(rowHtml).join("")}</div>
         <button class="btn ghost" data-add>＋ Ingrediente</button></div>
-      <label class="ef"><span>Olio per tutta la ricetta, in grammi <small>circa 10 g a testa</small></span><input class="txt" id="edOil" type="number" inputmode="decimal" min="0" step="any" value="${esc(d.oil)}"></label>
       <div id="edNut"></div>
       <label class="ef"><span>Procedimento <small>un passaggio per riga</small></span><textarea class="txt" id="edSteps" rows="5">${esc(d.s)}</textarea></label>
       <p class="hint" id="edErr" hidden></p>
@@ -591,63 +621,63 @@ function openEditor(id,back){
     if(!rows.length)return fail("Aggiungi almeno un ingrediente.");
     if(rows.some(x=>!x.n.trim()||!(+x.q>0)))return fail("Ogni ingrediente ha bisogno di nome e quantità.");
     const fresh=[...new Set(rows.map(x=>canon(x.n)))].filter(n=>!vals(n));
-    if(fresh.length)return fail(`Inserisci reparto e valori di: ${fresh.join(", ")} (tocca la riga arancione sotto l'ingrediente).`);
+    if(fresh.length)return fail(`Inserisci i valori di: ${fresh.join(", ")} (tocca la riga arancione sotto l'ingrediente).`);
     // catalogo: ingredienti nuovi o con valori cambiati
-    const touched=[];
     for(const n of new Set(rows.map(x=>canon(x.n)))){const v=d.ing[n];if(!v)continue;const old=ING[n],data=ingData(n,v);
       if(sameIng(old,data))continue;
-      const iid=old?old.id:newIngId(n);S.ingr[iid]=data;queue("ingredients",iid,data);touched.push(n)}
+      const iid=old?old.id:newIngId(n);S.ingr[iid]=data;queue("ingredients",iid,data)}
     const nid=r?r.id:randId(),ingr=rows.map(x=>[canon(x.n),+x.q,x.u]);
-    const data={name,cat:recipeCat(ingr,vals)||"",ingredients:ingr,steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),oil:+d.oil||0,archived:false};
+    const data={name,ingredients:ingr,steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),archived:false};
     S.recipes[nid]=Object.assign(S.recipes[nid]||{vis:null},data);queue("recipes",nid,data);
-    rebuildRecipes();syncCats(touched);save();renderAll();toast(r?"Ricetta salvata":"Ricetta aggiunta");openRecipe(nid)};
+    rebuildRecipes();save();renderAll();toast(r?"Ricetta salvata":"Ricetta aggiunta");openRecipe(nid)};
   openSheet(r?`Modifica ricetta<small>${esc(r.n)}</small>`:"Nuova ricetta","");draw();
   const body=$("#sheetBody");
   body.oninput=e=>{const t=e.target,i=+t.dataset.i;
-    if(t.id==="edName")d.n=t.value;else if(t.id==="edOil")d.oil=t.value;else if(t.id==="edSteps")d.s=t.value;
+    if(t.id==="edName")d.n=t.value;else if(t.id==="edSteps")d.s=t.value;
     else if(t.dataset.f)d.rows[i][t.dataset.f]=t.value;
     else if(t.dataset.v){const n=canon(d.rows[i].n);d.ing[n][t.dataset.v]=t.value}
     refresh()};
   // finito di scrivere il nome: lo allineo al catalogo e, se i valori sono aperti, li ridisegno per il nuovo nome
   body.onchange=e=>{const t=e.target;if(t.dataset.f!=="n")return;const i=+t.dataset.i;d.rows[i].n=canon(t.value);t.value=d.rows[i].n;
-    if(d.open===i){const n=d.rows[i].n;if(n&&!d.ing[n])d.ing[n]={...(ING[n]||{dept:"Dispensa"})};draw()}else refresh()};
+    if(d.open===i){const n=d.rows[i].n;if(n&&!d.ing[n])d.ing[n]={...(ING[n]||{cats:[]})};draw()}else refresh()};
   body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
-    if("add" in b.dataset){d.rows.push({n:"",q:"",u:"g"});draw();body.querySelector(`[data-i="${d.rows.length-1}"][data-f="n"]`).focus()}
+    if(b.dataset.icat){const n=canon(d.rows[+b.dataset.i].n);toggleCat(d.ing[n],b.dataset.icat);b.setAttribute("aria-pressed",d.ing[n].cats.includes(b.dataset.icat));refresh()}
+    else if("add" in b.dataset){d.rows.push({n:"",q:"",u:"g"});draw();body.querySelector(`[data-i="${d.rows.length-1}"][data-f="n"]`).focus()}
     else if(b.dataset.del){const i=+b.dataset.del;d.rows.splice(i,1);if(!d.rows.length)d.rows.push({n:"",q:"",u:"g"});d.open=d.open===i?-1:d.open>i?d.open-1:d.open;draw()}
-    else if(b.dataset.open){const i=+b.dataset.open,n=canon(d.rows[i].n);d.open=d.open===i?-1:i;if(d.open===i&&!d.ing[n])d.ing[n]={...(ING[n]||{dept:"Dispensa"})};draw()}
+    else if(b.dataset.open){const i=+b.dataset.open,n=canon(d.rows[i].n);d.open=d.open===i?-1:i;if(d.open===i&&!d.ing[n])d.ing[n]={...(ING[n]||{cats:[]})};draw()}
     else if("save" in b.dataset)doSave();
     else if("cancel" in b.dataset){if(back)back();else closeSheet()}};
 }
 
 /* ---------- Catalogo degli ingredienti ---------- */
-let ingQuery="";
+let ingQuery="",ingFilter=null;
 function renderIng(){
+  $("#ingFilters").innerHTML=filtersHtml(ingFilter,"Tutti");
   const q=ingQuery.trim().toLowerCase(),all=Object.keys(S.ingr).map(id=>({id,...S.ingr[id]}));
-  const list=all.filter(x=>!q||x.name.toLowerCase().includes(q));
-  const nUses=Object.fromEntries(all.map(x=>[x.name,activeUses(x.name).length]));
-  $("#ingCat").innerHTML=!all.length?`<p class="empty-note">Nessun ingrediente.<br>Aggiungilo con «Nuovo».</p>`:!list.length?`<p class="empty-note">Nessun ingrediente con «${esc(ingQuery.trim())}».</p>`:
-    CATS.map(c=>{const its=list.filter(x=>(x.dept||"Dispensa")===c).sort((a,b)=>a.name.localeCompare(b.name,"it"));if(!its.length)return"";
-      return `<div class="cat"><h3>${c}</h3><div class="items">${its.map(x=>`<button class="item" data-ing="${x.id}"><span class="iname"><b>${esc(x.name)}</b>
-        <small>${nUses[x.name]?`in ${nUses[x.name]} ${nUses[x.name]===1?"ricetta":"ricette"}`:"non usato"} · ${Math.round((x.c||0)*4+(x.p||0)*4+(x.f||0)*9)} kcal per 100 g</small></span>${tagHtml(x.prot)}</button>`).join("")}</div></div>`}).join("");
+  const list=all.filter(x=>(!q||x.name.toLowerCase().includes(q))&&(!ingFilter||(x.cats||[]).includes(ingFilter))).sort((a,b)=>a.name.localeCompare(b.name,"it"));
+  $("#ingCat").innerHTML=!all.length?`<p class="empty-note">Nessun ingrediente.<br>Aggiungilo con «Nuovo».</p>`:!list.length?`<p class="empty-note">Nessun ingrediente${q?` con «${esc(ingQuery.trim())}»`:""}${ingFilter?` nella categoria ${esc(cname(ingFilter).toLowerCase())}`:""}.</p>`:
+    `<div class="items">${list.map(x=>{const n=activeUses(x.name).length;return `<button class="item" data-ing="${x.id}"><span class="iname"><b>${esc(x.name)}</b>
+      <small>${n?`in ${n} ${n===1?"ricetta":"ricette"}`:"non usato"} · ${Math.round((x.c||0)*4+(x.p||0)*4+(x.f||0)*9)} kcal per 100 g</small></span><span class="itags">${tagsHtml(ingCats(x))}</span></button>`}).join("")}</div>`;
 }
 function openIngredient(id){
-  const old=id?S.ingr[id]:null,v=old?{...old}:{name:ingQuery.trim(),dept:"Dispensa",prot:""};
+  const old=id?S.ingr[id]:null,v=old?{...old,cats:ingCats(old)}:{name:ingQuery.trim(),cats:ingFilter?[ingFilter]:[]};
   const all=old?usesOf(old.name):[],uses=all.filter(r=>!r.archived);
   openSheet(old?`Ingrediente<small>${esc(old.name)}</small>`:"Nuovo ingrediente",`<div class="editor">
     <label class="ef"><span>Nome</span><input class="txt" id="igName" value="${esc(v.name)}" placeholder="Es. Ceci cotti" autocomplete="off"></label>
-    <div class="evals iform"><p>Valori per 100 g, come sull'etichetta. Se è una fonte proteica, le ricette che lo usano prendono la sua categoria.</p>${ingFieldsHtml(v)}</div>
+    <div class="evals iform"><p>Le ricette che lo usano prendono le sue categorie. Valori per 100 g, come sull'etichetta.</p>${ingFieldsHtml(v)}</div>
     ${uses.length?`<div class="ef"><span>Usato in ${uses.length} ${uses.length===1?"ricetta":"ricette"} <small>i cambiamenti valgono per tutte</small></span>
       <ul class="uses">${uses.map(r=>`<li>${esc(r.n)}</li>`).join("")}</ul></div>`:""}
     <p class="hint" id="igErr" hidden></p>
     <div class="row"><button class="btn" data-save>Salva</button><button class="btn ghost" data-cancel>Annulla</button>${old&&!uses.length?`<button class="btn ghost" data-delete>Elimina</button>`:""}</div>
     ${old&&uses.length?`<p class="shopnote" style="margin:0">Non si può eliminare finché è usato in una ricetta: prima toglilo da ${uses.length===1?"quella ricetta":"quelle ricette"}.</p>`:""}
     <div id="delBox"></div></div>`);
-  if(!old)setTimeout(()=>$("#igName").focus(),260);
+  if(!old)setTimeout(()=>($("#igName")||{focus(){}}).focus(),260);
   const fail=msg=>{const el=$("#igErr");el.textContent=msg;el.hidden=false;el.scrollIntoView({block:"center",behavior:"smooth"})};
   const body=$("#sheetBody");
   body.oninput=e=>{const t=e.target;if(t.id==="igName")v.name=t.value;else if(t.dataset.v)v[t.dataset.v]=t.value};
   body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
-    if("cancel" in b.dataset)closeSheet();
+    if(b.dataset.icat){toggleCat(v,b.dataset.icat);b.setAttribute("aria-pressed",v.cats.includes(b.dataset.icat))}
+    else if("cancel" in b.dataset)closeSheet();
     else if("delete" in b.dataset){$("#delBox").innerHTML=`<div class="confirm"><p>Eliminare <b>${esc(old.name)}</b> dal catalogo?</p>
       <div class="row"><button class="btn danger" data-confirm>Elimina</button><button class="btn ghost" data-nodel>Annulla</button></div></div>`;$("#delBox").scrollIntoView({block:"nearest",behavior:"smooth"})}
     else if("nodel" in b.dataset)$("#delBox").innerHTML="";
@@ -663,18 +693,19 @@ function openIngredient(id){
       // nome cambiato: lo cambio anche nelle ricette che lo usano (anche eliminate, così restano giuste nei pasti passati)
       if(old&&old.name!==name)for(const r of all){const ingredients=S.recipes[r.id].ingredients.map(x=>x[0]===old.name?[name,...x.slice(1)]:x);
         S.recipes[r.id].ingredients=ingredients;queue("recipes",r.id,{ingredients})}
-      rebuildRecipes();syncCats([name]);save();closeSheet();renderAll();
+      rebuildRecipes();save();closeSheet();renderAll();
       toast(old?(uses.length?`Ingrediente salvato, ${uses.length} ${uses.length===1?"ricetta aggiornata":"ricette aggiornate"}`:"Ingrediente salvato"):"Ingrediente aggiunto")}};
 }
 $("#ingCat").addEventListener("click",e=>{const b=e.target.closest("[data-ing]");if(b)openIngredient(b.dataset.ing)});
 $("#newIng").addEventListener("click",()=>openIngredient(null));
 $("#ingSearch").addEventListener("input",e=>{ingQuery=e.target.value;renderIng()});
+$("#ingFilters").addEventListener("click",e=>{const b=e.target.closest("[data-f]");if(!b)return;ingFilter=b.dataset.f||null;renderIng()});
 
 /* ---------- Spesa ---------- */
 function shoppingList(){
   const map=new Map();
   weekKeys().forEach(k=>["pranzo","cena"].forEach(m=>{const id=rid(slot(k,m));if(!id)return;const r=byId[id];
-    r.i.forEach(([n,q,u,c])=>{const kk=n+"|"+u;const e=map.get(kk)||{n,u,c,q:0,from:new Set()};e.q+=q;e.from.add(r.n);map.set(kk,e)})}));
+    r.i.forEach(([n,q,u])=>{const kk=n+"|"+u;const e=map.get(kk)||{n,u,c:ingCats(ING[n])[0]||null,q:0,from:new Set()};e.q+=q;e.from.add(r.n);map.set(kk,e)})}));
   return[...map.values()];
 }
 const wk=()=>key(weekStart());
@@ -695,8 +726,9 @@ function renderShop(){
   $("#prog").parentNode.hidden=casa;
   $("#prog").style.width=toBuy.length?(done/toBuy.length*100)+"%":"0";
   if(!items.length){$("#shop").innerHTML=`<p class="empty-note">Nessun pasto in questa settimana.<br>Aggiungi qualche ricetta e la lista si compone da sola.</p>`;return}
-  const byCat=(list,fn)=>CATS.map(c=>{const its=list.filter(i=>i.c===c).sort((a,b)=>a.n.localeCompare(b.n,"it"));if(!its.length)return"";
-    return `<div class="cat"><h3>${c}</h3><div class="items">${fn(its)}</div></div>`}).join("");
+  // raggruppo per la prima categoria dell'ingrediente (in ordine), gli altri in fondo
+  const byCat=(list,fn)=>{const gs=[...CAT.map(c=>c.id),null].map(c=>[c,list.filter(i=>(catById[i.c]?i.c:null)===c).sort((a,b)=>a.n.localeCompare(b.n,"it"))]).filter(g=>g[1].length);
+    return gs.map(([c,its])=>`<div class="cat">${gs.length>1?`<h3>${c?esc(cname(c)):"Altro"}</h3>`:""}<div class="items">${fn(its)}</div></div>`).join("")};
   if(casa){
     // controllo dispensa: − e + regolano direttamente quanto comprare
     $("#shop").innerHTML=`<p class="shopnote">Con − togli quello che hai già. Tocca il nome se ce l'hai tutto.</p>`+
@@ -724,8 +756,9 @@ function renderRec(){
   document.querySelectorAll("#recMode button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===recMode));
   $("#recPane").hidden=recMode!=="rec";$("#ingPane").hidden=recMode!=="ing";renderIng();
   $("#recFilters").innerHTML=filtersHtml(recFilter);
-  const list=R.filter(r=>!recFilter||r.t===recFilter);
-  $("#recList").innerHTML=list.length?list.map(r=>cardHtml(r,false,true)).join(""):`<p class="empty-note">Nessuna ricetta${recFilter?` di ${PSING[recFilter]}`:""}.<br>Aggiungila con «Nuova ricetta».</p>`;
+  if(recFilter&&!catById[recFilter])recFilter=null;
+  const list=R.filter(r=>!recFilter||r.k.includes(recFilter));
+  $("#recList").innerHTML=list.length?list.map(r=>cardHtml(r,false,true)).join(""):`<p class="empty-note">Nessuna ricetta${recFilter?` nella categoria ${esc(cname(recFilter).toLowerCase())}`:""}.<br>Aggiungila con «Nuova ricetta».</p>`;
 }
 $("#newRec").addEventListener("click",()=>openEditor(null));
 $("#recMode").addEventListener("click",e=>{const b=e.target.closest("[data-mode]");if(!b)return;recMode=b.dataset.mode;renderRec();renderHeader();window.scrollTo(0,0)});

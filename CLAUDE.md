@@ -17,7 +17,7 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - **Collezioni:** `plan` (un record per giorno), `shopping` (uno per settimana), `settings` (record unico), `photos` (una foto per ricetta, 960×600 JPEG; il record si cerca per `recipe`), `recipes`, `ingredients` (catalogo). Regole: solo utenti autenticati. Registrazione pubblica disattivata.
 - **Locale per dispositivo:** `shopMode` (Controllo a casa / Al mercato).
 - **Service worker:** file dell'app stale-while-revalidate, foto e font cache-first, `/api/` sempre in rete.
-- **Ricette nel database** (migrazione `1761980400_recipes.js`, che ha importato le 17 di esempio): `recipes` = nome, `cat`, `ingredients` `[[nome, quantità, unità]]` già per 2,5 porzioni, `steps`, `oil` (g per tutta la ricetta), `vis` (illustrazione), `archived` (eliminata: sparisce da elenco, selettore e riempimento ma resta nei pasti pianificati). `ingredients` = catalogo per nome: `dept` (reparto della spesa), `prot` (fonte proteica, vuoto se non lo è), `c`/`p`/`f`/`fib` per 100 g, `unit_g` (peso di un'unità). `recipes.cat` è solo una copia: la categoria la calcola `recipeCat()` in `app.js`. In `app.js` `rebuildRecipes()` costruisce `R` (attive), `byId` (tutte, più gli alias dei vecchi id tipo `ceci` → `rceci0000000000`) e `ING`. Id: ricette nuove casuali, ingredienti `i` + hash del nome (casuale se quell'id è già preso da un ingrediente rinominato). La coda `outbox` gestisce anche le eliminazioni (`del: true`).
+- **Ricette nel database** (migrazione `1761980400_recipes.js`, che ha importato le 17 di esempio): `recipes` = nome, `ingredients` `[[nome, quantità, unità]]` già per 2,5 porzioni (l'olio è un ingrediente, "Olio extravergine"), `steps`, `vis` (illustrazione), `archived` (eliminata: sparisce da elenco, selettore e riempimento ma resta nei pasti pianificati). `ingredients` = catalogo per nome: `cats` (id delle categorie), `c`/`p`/`f`/`fib` per 100 g, `unit_g` (peso di un'unità). `categories` = `name`, `color` (indice 0–9 della tavolozza `--k0…--k9` in `app.css`), `order`, `goal` `{min, max}` (migrazione `1762156800_categories.js`: le sette fonti proteiche sono diventate categorie; via `prot`, `dept`, `recipes.cat`, `recipes.oil`, `settings.goals`). In `app.js` `rebuildRecipes()` costruisce `CAT` (categorie in ordine), `R` (attive), `byId` (tutte, più gli alias dei vecchi id tipo `ceci` → `rceci0000000000`; `r.k` = categorie della ricetta) e `ING`. Id: ricette e categorie nuove casuali, ingredienti `i` + hash del nome (casuale se quell'id è già preso da un ingrediente rinominato). La coda `outbox` gestisce anche le eliminazioni (`del: true`).
 - Online su https://cucinario.ededona.es: container su `127.0.0.1:8091`, nginx in Docker gestito con Ansible dal repo `infra` sulla Raspberry (`~/infra`, voce `cucinario` in `proxy_sites`).
 - Deploy: `./deploy.sh` (git pull + `docker compose up -d --build`), anche da cron ogni 5 minuti.
 - Backup: cron interno di PocketBase, lunedì 3:00, ultimi 8 in `pb_data/backups/`.
@@ -32,17 +32,18 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - Ogni ricetta ha una **foto** (illustrazione generata, o foto vera caricata dal telefono).
 - Home pulita: nessuna impostazione in fondo alla pagina.
 
-### Categorie = fonti proteiche
-Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi erano un'unica categoria, divisa in tre a novembre 2026).
-- La categoria di una ricetta **non si sceglie**: ogni ingrediente può essere una fonte proteica, e la ricetta prende quella dell'ingrediente che porta più proteine (es. farro, ceci e feta → ceci).
-- Una ricetta senza ingredienti "fonte proteica" mostra "Nessuna fonte proteica", non conta per gli obiettivi e il riempimento automatico non la usa.
+### Categorie
+Le crea e gestisce la famiglia (Impostazioni → Obiettivi settimanali e categorie): nome, colore, obiettivo. Hanno sostituito "fonte proteica" e "reparto" (novembre 2026); quelle iniziali sono le sette fonti proteiche: lenticchie, fagioli, ceci, pesce, carne, uova, latticini.
+- Un **ingrediente** ha zero o più categorie; una **ricetta** ha tutte le categorie dei suoi ingredienti (non si scelgono sulla ricetta). Es. polpette = carne + uova (+ latticini se il parmigiano è segnato latticini).
+- Le categorie sono: i **tag** di ricette e ingredienti, i **filtri** delle due liste, i **gruppi della lista della spesa** e la base degli **obiettivi settimanali**.
+- Eliminare una categoria la toglie da tutti gli ingredienti e ne cancella l'obiettivo.
 
 ### Obiettivi settimanali
-- Per categoria: **almeno N** e/o **al massimo N** volte a settimana (pranzi + cene).
-- Default: lenticchie ≥1, fagioli ≥1, ceci ≥1, pesce ≥2, carne ≤2, uova ≤2, latticini ≤3. Obiettivi salvati con categorie che non esistono più (es. `legumi`) vengono completati con i default (`normGoals`).
+- Per categoria: **almeno N** e/o **al massimo N** volte a settimana (pranzi + cene). Un pasto conta una volta per ognuna delle sue categorie.
+- Valori iniziali: lenticchie ≥1, fagioli ≥1, ceci ≥1, pesce ≥2, carne ≤2, uova ≤2, latticini ≤3 (in produzione sono quelli che aveva impostato la famiglia).
 - Accanto alla data della settimana, un'**icona**: ✓ verde se tutti gli obiettivi sono rispettati, ! arancione se no, grigia se la settimana è vuota.
-- Toccandola si apre il **resoconto**: 7 tessere su due righe (i tre legumi sopra) con conteggio / obiettivo, verde se rispettato, arancione con "manca 1" o "+1 di troppo"; da lì "Modifica obiettivi". (Prima le tessere stavano fisse in cima: troppo ingombranti con sette categorie.)
-- Il selettore avvisa cosa manca e mette prima le categorie che servono.
+- Toccandola si apre il **resoconto**: una tessera per categoria con conteggio / obiettivo, verde se rispettato, arancione con "manca 1" o "+1 di troppo"; da lì "Modifica obiettivi". (Prima le tessere stavano fisse in cima: troppo ingombranti.)
+- Il selettore avvisa cosa manca e mette prima le ricette con le categorie che servono.
 
 ### Pasto fuori casa
 - In cima al selettore, con **nota** (suggerimenti: Ristorante, Pizza, Pranzo al lavoro, Salto il pasto…).
@@ -53,27 +54,28 @@ Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi er
 - **Riempi solo gli spazi vuoti** / **Rifai tutta la settimana** (i fuori casa restano).
 - **Copia una settimana passata** (mantiene i fuori casa della settimana corrente).
 - **Svuota la settimana.**
-- Regole del riempimento automatico:
-  1. prima i **minimi**, poi completa **senza superare i massimi**, categorie varie;
-  2. **mai la stessa fonte proteica a pranzo e a cena dello stesso giorno** (contando anche i pasti scelti a mano);
-  3. evita di ripetere la stessa ricetta nella settimana;
-  4. **cena → pranzo del giorno dopo**: cuciniamo la cena e insieme il pranzo del giorno dopo, quindi il pranzo preferisce ricette che **condividono ingredienti** con la cena della sera prima (esclusi minori: aglio, erbe, limone, farina, capperi, parmigiano, burro, vino). I pranzi collegati mostrano "🔗 con la cena di ieri"; il dettaglio dice cosa hanno in comune; nel selettore queste ricette compaiono per prime.
+- Regole del riempimento automatico (`autofill`: ricerca locale che minimizza un costo, partendo da scelte a caso e cambiando un pasto alla volta; in ordine di peso):
+  1. rispettare **minimi** e **massimi** di ogni categoria;
+  2. **evitare la stessa categoria a pranzo e a cena dello stesso giorno** (contando anche i pasti scelti a mano);
+  3. evitare di ripetere la stessa ricetta nella settimana;
+  4. un po' di varietà tra le categorie;
+  5. **cena → pranzo del giorno dopo**: cuciniamo la cena e insieme il pranzo del giorno dopo, quindi il pranzo preferisce ricette che **condividono ingredienti** con la cena della sera prima (esclusi minori: aglio, erbe, limone, farina, capperi, parmigiano, burro, vino, olio). I pranzi collegati mostrano "🔗 con la cena di ieri"; il dettaglio dice cosa hanno in comune; nel selettore queste ricette compaiono per prime.
 
 ### Dettaglio ricetta
-- Foto, fonte proteica, porzioni, ingredienti con quantità, procedimento.
+- Foto, categorie, porzioni, ingredienti con quantità, procedimento.
 - **Bilanciamento del pasto** (solo qui, NON nella vista settimanale: ogni singolo pasto dev'essere bilanciato, non si compensa tra pasti):
   - verdetto: "Pasto bilanciato" o "Da rivedere" con cosa non va;
   - **carboidrati, proteine, grassi in % sulle calorie** e in grammi, con barra che mostra **intervallo** e valore;
   - **fibre in grammi** con un minimo; calorie per porzione.
 - Intervalli default: carboidrati **45–60%**, proteine **15–25%**, grassi **20–35%**, fibre **≥ 8 g** a pasto. Modificabili.
-- Valori calcolati dagli ingredienti (catalogo: per 100 g + peso di un'unità) più l'olio della ricetta (default 25 g, circa un cucchiaio a testa).
-- Nell'elenco Ricette, le ricette fuori intervallo hanno solo un **triangolino arancione** (non un'etichetta testuale, che si confondeva con il tag della proteina).
+- Valori calcolati dagli ingredienti (catalogo: per 100 g + peso di un'unità); l'olio è un ingrediente come gli altri (le ricette di esempio ne hanno 12–25 g).
+- Nell'elenco Ricette, le ricette fuori intervallo hanno solo un **triangolino arancione** (non un'etichetta testuale, che si confondeva con i tag delle categorie).
 
 ### Porzioni
 **Tutte le ricette sono per 2 adulti + 1 bambina = 2,5 porzioni.** (Porzioni variabili per pasto: valutate e scartate per ora.)
 
 ### Lista della spesa
-- Somma gli ingredienti della settimana visualizzata, per reparto (Frutta e verdura, Pesce, Carne, Latticini e uova, Pane e pasta, Dispensa); sotto ogni prodotto le ricette che lo usano. I fuori casa non contano.
+- Somma gli ingredienti della settimana visualizzata, raggruppati per categoria (la prima dell'ingrediente, nell'ordine delle categorie; senza categoria in "Altro"); sotto ogni prodotto le ricette che lo usano. I fuori casa non contano.
 - Due modalità:
   - **Controllo a casa**: ogni riga ha **− quantità +** per scalare ciò che ho già. Passo: 1 per i pezzi, 50 g (100 g sopra il kg). Toccando il nome = "ce l'ho tutto".
   - **Al mercato**: lista da spuntare con quantità ridotte; barra di avanzamento; presi in fondo; "Già in casa" in una riga in fondo. Deve funzionare **offline**.
@@ -81,16 +83,16 @@ Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi er
 
 ### Ricette e ingredienti: creare, modificare, eliminare
 - Scheda Ricette → **＋ Nuova ricetta**; dal dettaglio di una ricetta (anche dal pasto in settimana) → **Modifica** / **Elimina**.
-- Editor: nome, righe ingrediente (nome dal catalogo, quantità, unità), olio, procedimento (un passaggio per riga). La fonte proteica e il pannello del bilanciamento si aggiornano mentre si scrive.
-- Ingrediente non ancora nel catalogo: la riga diventa arancione e chiede reparto, fonte proteica, valori per 100 g e peso di un'unità; non si salva finché non sono inseriti. Cambiare i valori di un ingrediente esistente vale per tutte le ricette.
-- **Catalogo ingredienti**: scheda Ricette → interruttore **Ricette / Ingredienti**. Elenco per reparto con ricerca, "in N ricette" (solo ricette attive) e tag della fonte proteica; **＋ Nuovo**; toccando un ingrediente si modificano nome, reparto, fonte proteica e valori.
+- Editor: nome, righe ingrediente (nome dal catalogo, quantità, unità), procedimento (un passaggio per riga). Le categorie e il pannello del bilanciamento si aggiornano mentre si scrive.
+- Ingrediente non ancora nel catalogo: la riga diventa arancione e chiede categorie, valori per 100 g e peso di un'unità; non si salva finché non sono inseriti. Cambiare i valori di un ingrediente esistente vale per tutte le ricette.
+- **Catalogo ingredienti**: scheda Ricette → interruttore **Ricette / Ingredienti**. Elenco alfabetico con ricerca e filtro per categoria, "in N ricette" (solo ricette attive) e tag delle categorie; **＋ Nuovo**; toccando un ingrediente si modificano nome, categorie (chip da accendere) e valori.
   - **Rinominare** aggiorna il nome in tutte le ricette che lo usano (anche quelle eliminate, senza mostrarle).
-  - Cambiare la fonte proteica ricalcola la categoria delle ricette.
+  - Cambiare le categorie di un ingrediente cambia subito quelle delle ricette che lo usano.
   - **Eliminare** è possibile solo se nessuna ricetta attiva lo usa: altrimenti mostra l'elenco delle ricette. Le ricette eliminate non contano (né nel conteggio né nell'elenco); se ne usavano uno eliminato, nei pasti passati quell'ingrediente non ha più valori e, ripristinando la ricetta, l'editor lo chiede come nuovo. Eliminare un ingrediente lo cancella davvero dal database.
 - Eliminare = archiviare; salvare dall'editor una ricetta eliminata la ripristina.
 
 ### Impostazioni (scheda in basso)
-Obiettivi settimanali, Pasto bilanciato (intervalli), Orari dei pasti, Account (esci).
+Obiettivi settimanali e categorie (creare, rinominare, colore, eliminare), Pasto bilanciato (intervalli), Orari dei pasti, Account (esci).
 
 ### Navigazione
 Barra in basso: **Settimana · Spesa · Ricette · Impostazioni**.
