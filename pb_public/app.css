@@ -4,7 +4,7 @@
   --bg:#f3f5f1; --surface:#ffffff; --surface-2:#e8ece4; --fg:#1d2420; --muted:#66705f;
   --line:#d6ddd0; --accent:#2f6b3a; --accent-fg:#ffffff; --accent-soft:#dcebd9; --today:#c2410c;
   --ok:#2f6b3a; --ok-bg:#e1efdf; --warn:#b45309; --warn-bg:#fbead4;
-  --t-pesce:#1d5f8a; --t-pesce-bg:#dceaf4; --t-legumi:#8a5a1d; --t-legumi-bg:#f3e6d3;
+  --t-pesce:#1d5f8a; --t-pesce-bg:#dceaf4; --t-lenticchie:#8a5a1d; --t-lenticchie-bg:#f3e6d3; --t-fagioli:#8e3b6e; --t-fagioli-bg:#f3dcea; --t-ceci:#1f7a6a; --t-ceci-bg:#d6eee9;
   --t-carne:#a12d2d; --t-carne-bg:#f5dcdc; --t-latticini:#7a6a00; --t-latticini-bg:#f4efc8;
   --t-uova:#6b4f9a; --t-uova-bg:#e8e0f4;
   --m-c:#d9a441; --m-p:#c2554a; --m-f:#5f86b0; --m-fib:#3f8a3a;
@@ -16,14 +16,14 @@
   --bg:#141814; --surface:#1d221d; --surface-2:#262c25; --fg:#e8ede4; --muted:#9aa595;
   --line:#323a31; --accent:#7cc287; --accent-fg:#0f1a11; --accent-soft:#24382a; --today:#fb923c;
   --ok:#8fd19b; --ok-bg:#1f3324; --warn:#fbbf6a; --warn-bg:#3a2a14;
-  --t-pesce:#8cc4ec; --t-pesce-bg:#1c3142; --t-legumi:#e3b77a; --t-legumi-bg:#3a2d1b;
+  --t-pesce:#8cc4ec; --t-pesce-bg:#1c3142; --t-lenticchie:#e3b77a; --t-lenticchie-bg:#3a2d1b; --t-fagioli:#e7a3cf; --t-fagioli-bg:#3a2233; --t-ceci:#7fd3c2; --t-ceci-bg:#17332e;
   --t-carne:#f09a9a; --t-carne-bg:#3e2222; --t-latticini:#e6d36a; --t-latticini-bg:#383217;
   --t-uova:#c4b0ec; --t-uova-bg:#2f2840; --m-c:#e8bd5f; --m-p:#e57f74; --m-f:#86a9d1; --m-fib:#8fd19b; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#141814; --surface:#1d221d; --surface-2:#262c25; --fg:#e8ede4; --muted:#9aa595;
   --line:#323a31; --accent:#7cc287; --accent-fg:#0f1a11; --accent-soft:#24382a; --today:#fb923c;
   --ok:#8fd19b; --ok-bg:#1f3324; --warn:#fbbf6a; --warn-bg:#3a2a14;
-  --t-pesce:#8cc4ec; --t-pesce-bg:#1c3142; --t-legumi:#e3b77a; --t-legumi-bg:#3a2d1b;
+  --t-pesce:#8cc4ec; --t-pesce-bg:#1c3142; --t-lenticchie:#e3b77a; --t-lenticchie-bg:#3a2d1b; --t-fagioli:#e7a3cf; --t-fagioli-bg:#3a2233; --t-ceci:#7fd3c2; --t-ceci-bg:#17332e;
   --t-carne:#f09a9a; --t-carne-bg:#3e2222; --t-latticini:#e6d36a; --t-latticini-bg:#383217;
   --t-uova:#c4b0ec; --t-uova-bg:#2f2840; --m-c:#e8bd5f; --m-p:#e57f74; --m-f:#86a9d1; --m-fib:#8fd19b; color-scheme:dark}
 
@@ -62,7 +62,10 @@ h1{font-family:var(--f-display);font-weight:700;font-size:22px;letter-spacing:-.
 main .wrap{padding-block:12px 110px}
 
 /* obiettivi */
-.goals{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;width:100%;padding:0}
+/* 7 tessere su due righe: i tre legumi sopra (4/12 ciascuno), le altre quattro sotto (3/12) */
+.goals{display:grid;grid-template-columns:repeat(12,1fr);gap:6px;width:100%;padding:0}
+.goals .goal{grid-column:span 3}
+.goals .goal:nth-child(-n+3){grid-column:span 4}
 .weeknav .lbl{line-height:1.25}
 .day.past{opacity:.55}
 .day.past .dname,.day.past .ddate{color:var(--muted)}
@@ -146,7 +149,9 @@ main .wrap{padding-block:12px 110px}
 .slot.empty .ph{display:grid;place-items:center;border:1.5px dashed var(--line);background:transparent;color:var(--muted);font-weight:600;font-size:14px}
 .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
 .t-pesce{color:var(--t-pesce);background:var(--t-pesce-bg)}
-.t-legumi{color:var(--t-legumi);background:var(--t-legumi-bg)}
+.t-lenticchie{color:var(--t-lenticchie);background:var(--t-lenticchie-bg)}
+.t-fagioli{color:var(--t-fagioli);background:var(--t-fagioli-bg)}
+.t-ceci{color:var(--t-ceci);background:var(--t-ceci-bg)}
 .t-carne{color:var(--t-carne);background:var(--t-carne-bg)}
 .t-latticini{color:var(--t-latticini);background:var(--t-latticini-bg)}
 .t-uova{color:var(--t-uova);background:var(--t-uova-bg)}

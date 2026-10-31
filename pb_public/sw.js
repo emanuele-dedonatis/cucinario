@@ -2,8 +2,9 @@
    - file dell'app: risposta dalla cache, aggiornata in background (il nuovo deploy si vede alla riapertura successiva)
    - foto delle ricette e font: cache al primo uso
    - API di PocketBase: sempre dalla rete (la coda offline la gestisce app.js) */
-const SHELL = "cucinario-shell-v1", RUNTIME = "cucinario-runtime-v1";
-const FILES = ["./", "index.html", "app.css", "app.js", "manifest.json", "vendor/pocketbase.umd.js",
+const SHELL = "cucinario-shell-v2", RUNTIME = "cucinario-runtime-v1";
+// niente "index.html": PocketBase lo redirige a "./" e una risposta rediretta non si può usare per aprire la pagina
+const FILES = ["./", "app.css", "app.js", "manifest.json", "vendor/pocketbase.umd.js",
   "icons/icon.svg", "icons/icon-192.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -42,7 +43,7 @@ self.addEventListener("fetch", e => {
   if (url.origin === location.origin) {
     if (url.pathname.startsWith("/api/files/")) return e.respondWith(cacheFirst(req));
     if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/_/")) return;
-    if (req.mode === "navigate") return e.respondWith(staleWhileRevalidate(req, "index.html"));
+    if (req.mode === "navigate") return e.respondWith(staleWhileRevalidate(req, "./"));
     return e.respondWith(staleWhileRevalidate(req));
   }
   if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {

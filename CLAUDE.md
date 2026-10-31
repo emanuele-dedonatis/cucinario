@@ -33,12 +33,12 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - Home pulita: nessuna impostazione in fondo alla pagina.
 
 ### Categorie = fonti proteiche
-Solo cinque: **legumi, pesce, carne, uova, latticini**. Ogni ricetta ne ha una.
+Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi erano un'unica categoria, divisa in tre a novembre 2026). Ogni ricetta ne ha una.
 
 ### Obiettivi settimanali
 - Per categoria: **almeno N** e/o **al massimo N** volte a settimana (pranzi + cene).
-- Default: legumi ≥3, pesce ≥2, carne ≤2, uova ≤2, latticini ≤3.
-- In cima, **5 tessere fisse**: conteggio / obiettivo, verde se rispettato, arancione con "manca 1" o "+1 di troppo".
+- Default: lenticchie ≥1, fagioli ≥1, ceci ≥1, pesce ≥2, carne ≤2, uova ≤2, latticini ≤3. Obiettivi salvati con categorie che non esistono più (es. `legumi`) vengono completati con i default (`normGoals`).
+- In cima, **7 tessere fisse** su due righe (i tre legumi sopra): conteggio / obiettivo, verde se rispettato, arancione con "manca 1" o "+1 di troppo".
 - Il selettore avvisa cosa manca e mette prima le categorie che servono.
 
 ### Pasto fuori casa

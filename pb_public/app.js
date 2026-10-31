@@ -1,28 +1,29 @@
 (function(){
 /* ---------- Categorie proteiche ---------- */
-const PROT = ["legumi","pesce","carne","uova","latticini"];
-const PNAME = {legumi:"Legumi",pesce:"Pesce",carne:"Carne",uova:"Uova",latticini:"Latticini"};
-const PSING = {legumi:"legumi",pesce:"pesce",carne:"carne",uova:"uova",latticini:"latticini"};
+// i legumi sono divisi in tre: nelle tessere in alto stanno sulla prima riga
+const PROT = ["lenticchie","fagioli","ceci","pesce","carne","uova","latticini"];
+const PNAME = {lenticchie:"Lenticchie",fagioli:"Fagioli",ceci:"Ceci",pesce:"Pesce",carne:"Carne",uova:"Uova",latticini:"Latticini"};
+const PSING = {lenticchie:"lenticchie",fagioli:"fagioli",ceci:"ceci",pesce:"pesce",carne:"carne",uova:"uova",latticini:"latticini"};
 const CATS = ["Frutta e verdura","Pesce","Carne","Latticini e uova","Pane e pasta","Dispensa"];
 
 /* ---------- Ricette di esempio (porzioni per 2) ----------
    v = illustrazione: b = base del piatto, c = colore base, x = elementi [forma, colore, quantità, grandezza] */
 const R = [
  {id:"ricotta",n:"Pasta pomodoro e ricotta",t:"latticini",v:{b:"spaghetti",c:"#e8a33a",x:[["dot","#fbf7ee",5,9],["leaf","#3f8f3a",4,6]]},i:[["Spaghetti",160,"g","Pane e pasta"],["Passata di pomodoro",400,"g","Dispensa"],["Ricotta",150,"g","Latticini e uova"],["Basilico",1,"mazzo","Frutta e verdura"],["Aglio",1,"spicchio","Frutta e verdura"]],s:["Soffriggi l'aglio nell'olio.","Aggiungi la passata e cuoci 15 minuti.","Scola la pasta, condisci e aggiungi la ricotta a cucchiaiate."]},
- {id:"ceci",n:"Pasta e ceci",t:"legumi",v:{b:"soup",c:"#d8b36a",x:[["dot","#e9cf8f",14,5],["short","#f1d58c",8,6],["leaf","#4f7d3a",2,5]]},i:[["Ceci cotti",400,"g","Dispensa"],["Ditalini",140,"g","Pane e pasta"],["Rosmarino",1,"rametto","Frutta e verdura"],["Aglio",1,"spicchio","Frutta e verdura"],["Passata di pomodoro",100,"g","Dispensa"]],s:["Insaporisci aglio e rosmarino nell'olio.","Aggiungi ceci, passata e acqua; frulla metà dei ceci.","Cuoci la pasta direttamente nel brodo."]},
+ {id:"ceci",n:"Pasta e ceci",t:"ceci",v:{b:"soup",c:"#d8b36a",x:[["dot","#e9cf8f",14,5],["short","#f1d58c",8,6],["leaf","#4f7d3a",2,5]]},i:[["Ceci cotti",400,"g","Dispensa"],["Ditalini",140,"g","Pane e pasta"],["Rosmarino",1,"rametto","Frutta e verdura"],["Aglio",1,"spicchio","Frutta e verdura"],["Passata di pomodoro",100,"g","Dispensa"]],s:["Insaporisci aglio e rosmarino nell'olio.","Aggiungi ceci, passata e acqua; frulla metà dei ceci.","Cuoci la pasta direttamente nel brodo."]},
  {id:"salmone",n:"Salmone al forno con patate",t:"pesce",v:{b:"none",x:[["fillet","#f2875a",1,30],["wedge","#e9c26a",6,9],["leaf","#4f7d3a",3,5],["dot","#f4e36b",1,8]]},i:[["Filetti di salmone",2,"pz","Pesce"],["Patate",400,"g","Frutta e verdura"],["Limone",1,"pz","Frutta e verdura"],["Rosmarino",1,"rametto","Frutta e verdura"]],s:["Taglia le patate a spicchi e inforna 20 minuti a 200°.","Aggiungi il salmone con limone e rosmarino.","Cuoci altri 12–15 minuti."]},
  {id:"orata",n:"Orata al cartoccio",t:"pesce",v:{b:"none",x:[["fish","#b9c3c9",1,34],["dot","#e0443a",6,6],["dot","#3b3a2f",5,4],["leaf","#4f9a3a",4,5]]},i:[["Orata",2,"pz","Pesce"],["Pomodorini",200,"g","Frutta e verdura"],["Olive taggiasche",40,"g","Dispensa"],["Prezzemolo",1,"mazzo","Frutta e verdura"],["Limone",1,"pz","Frutta e verdura"]],s:["Metti l'orata su carta forno con pomodorini e olive.","Chiudi il cartoccio e cuoci 25 minuti a 190°."]},
  {id:"merluzzo",n:"Merluzzo con pomodorini e olive",t:"pesce",v:{b:"sauce",c:"#d9573f",x:[["fillet","#f4efe6",1,28],["dot","#e8463a",7,6],["dot","#2f2e25",6,4]]},i:[["Filetti di merluzzo",2,"pz","Pesce"],["Pomodorini",250,"g","Frutta e verdura"],["Olive taggiasche",40,"g","Dispensa"],["Capperi",1,"cucchiaio","Dispensa"]],s:["Appassisci i pomodorini in padella.","Aggiungi olive, capperi e il merluzzo.","Cuoci coperto 8–10 minuti."]},
  {id:"tonno",n:"Insalata di tonno e fagiolini",t:"pesce",v:{b:"none",x:[["stick","#5c9a3e",10,12],["dot","#c98b6b",8,6],["wedge","#efd9a0",4,8],["dot","#e8463a",4,5]]},i:[["Tonno sott'olio",160,"g","Dispensa"],["Fagiolini",300,"g","Frutta e verdura"],["Patate",250,"g","Frutta e verdura"],["Pomodorini",150,"g","Frutta e verdura"]],s:["Lessa fagiolini e patate.","Lascia intiepidire e unisci tonno e pomodorini.","Condisci con olio, sale e limone."]},
- {id:"lenticchie",n:"Lenticchie in umido con riso",t:"legumi",v:{b:"half",c:"#7a5233",x:[["dot","#5c3c24",16,4],["dot","#e8873a",4,4]]},i:[["Lenticchie secche",200,"g","Dispensa"],["Riso basmati",140,"g","Pane e pasta"],["Carota",1,"pz","Frutta e verdura"],["Sedano",1,"costa","Frutta e verdura"],["Cipolla",1,"pz","Frutta e verdura"],["Passata di pomodoro",100,"g","Dispensa"]],s:["Prepara un soffritto di carota, sedano e cipolla.","Aggiungi lenticchie, passata e acqua; cuoci 35 minuti.","Servi con il riso."]},
- {id:"fagioli",n:"Pasta e fagioli",t:"legumi",v:{b:"soup",c:"#a4573b",x:[["bean","#c98a7a",9,7],["short","#e9c77a",6,6],["dot","#e8873a",3,4]]},i:[["Fagioli borlotti cotti",400,"g","Dispensa"],["Pasta mista",140,"g","Pane e pasta"],["Carota",1,"pz","Frutta e verdura"],["Sedano",1,"costa","Frutta e verdura"],["Cipolla",1,"pz","Frutta e verdura"]],s:["Soffriggi le verdure tritate.","Aggiungi i fagioli e copri d'acqua; cuoci 20 minuti.","Cuoci la pasta nel brodo."]},
- {id:"farro",n:"Insalata di farro, ceci e feta",t:"legumi",v:{b:"grain",c:"#b8925a",x:[["dot","#e3c27f",8,6],["cube","#f8f6ef",6,7],["dot","#e8463a",5,5],["dot","#8fbf6a",5,5]]},i:[["Farro",160,"g","Pane e pasta"],["Ceci cotti",240,"g","Dispensa"],["Feta",100,"g","Latticini e uova"],["Cetriolo",1,"pz","Frutta e verdura"],["Pomodorini",150,"g","Frutta e verdura"]],s:["Cuoci il farro e lascialo raffreddare.","Unisci ceci, verdure a cubetti e feta."]},
+ {id:"lenticchie",n:"Lenticchie in umido con riso",t:"lenticchie",v:{b:"half",c:"#7a5233",x:[["dot","#5c3c24",16,4],["dot","#e8873a",4,4]]},i:[["Lenticchie secche",200,"g","Dispensa"],["Riso basmati",140,"g","Pane e pasta"],["Carota",1,"pz","Frutta e verdura"],["Sedano",1,"costa","Frutta e verdura"],["Cipolla",1,"pz","Frutta e verdura"],["Passata di pomodoro",100,"g","Dispensa"]],s:["Prepara un soffritto di carota, sedano e cipolla.","Aggiungi lenticchie, passata e acqua; cuoci 35 minuti.","Servi con il riso."]},
+ {id:"fagioli",n:"Pasta e fagioli",t:"fagioli",v:{b:"soup",c:"#a4573b",x:[["bean","#c98a7a",9,7],["short","#e9c77a",6,6],["dot","#e8873a",3,4]]},i:[["Fagioli borlotti cotti",400,"g","Dispensa"],["Pasta mista",140,"g","Pane e pasta"],["Carota",1,"pz","Frutta e verdura"],["Sedano",1,"costa","Frutta e verdura"],["Cipolla",1,"pz","Frutta e verdura"]],s:["Soffriggi le verdure tritate.","Aggiungi i fagioli e copri d'acqua; cuoci 20 minuti.","Cuoci la pasta nel brodo."]},
+ {id:"farro",n:"Insalata di farro, ceci e feta",t:"ceci",v:{b:"grain",c:"#b8925a",x:[["dot","#e3c27f",8,6],["cube","#f8f6ef",6,7],["dot","#e8463a",5,5],["dot","#8fbf6a",5,5]]},i:[["Farro",160,"g","Pane e pasta"],["Ceci cotti",240,"g","Dispensa"],["Feta",100,"g","Latticini e uova"],["Cetriolo",1,"pz","Frutta e verdura"],["Pomodorini",150,"g","Frutta e verdura"]],s:["Cuoci il farro e lascialo raffreddare.","Unisci ceci, verdure a cubetti e feta."]},
  {id:"pollo",n:"Pollo al limone con zucchine",t:"carne",v:{b:"none",x:[["fillet","#e2b47a",2,20],["round","#7dae55",8,7],["dot","#f4e36b",2,6]]},i:[["Petto di pollo",400,"g","Carne"],["Limone",1,"pz","Frutta e verdura"],["Zucchine",2,"pz","Frutta e verdura"],["Farina",2,"cucchiai","Dispensa"]],s:["Infarina il pollo a fettine e rosolalo.","Sfuma con il succo di limone.","Servi con zucchine saltate."]},
  {id:"polpette",n:"Polpette al sugo",t:"carne",v:{b:"sauce",c:"#c8402e",x:[["ball","#7a4a32",6,11],["leaf","#3f8f3a",3,5]]},i:[["Macinato di manzo",300,"g","Carne"],["Uova",1,"pz","Latticini e uova"],["Pane grattugiato",40,"g","Pane e pasta"],["Parmigiano",30,"g","Latticini e uova"],["Passata di pomodoro",400,"g","Dispensa"]],s:["Impasta carne, uovo, pane e parmigiano.","Forma le polpette e cuocile nel sugo 25 minuti."]},
  {id:"frittata",n:"Frittata di zucchine",t:"uova",v:{b:"disc",c:"#f0c548",x:[["round","#6fa04a",9,7],["dot","#e7b13a",6,4]]},i:[["Uova",4,"pz","Latticini e uova"],["Zucchine",2,"pz","Frutta e verdura"],["Parmigiano",30,"g","Latticini e uova"],["Cipolla",1,"pz","Frutta e verdura"]],s:["Rosola zucchine e cipolla.","Versa le uova sbattute col parmigiano.","Cuoci coperto e gira a metà cottura."]},
  {id:"purgatorio",n:"Uova in purgatorio",t:"uova",v:{b:"sauce",c:"#c8402e",x:[["egg","#ffffff",2,16],["leaf","#3f8f3a",4,5]]},i:[["Uova",4,"pz","Latticini e uova"],["Passata di pomodoro",400,"g","Dispensa"],["Pane casereccio",4,"fette","Pane e pasta"],["Basilico",1,"mazzo","Frutta e verdura"]],s:["Cuoci la passata 10 minuti in padella.","Rompi le uova nel sugo e copri.","Cuoci 6–8 minuti e servi col pane."]},
  {id:"risotto",n:"Risotto funghi e taleggio",t:"latticini",v:{b:"grain",c:"#e9dcb8",x:[["mush","#a0805e",6,10],["leaf","#4f7d3a",3,4]]},i:[["Riso Carnaroli",160,"g","Pane e pasta"],["Funghi champignon",250,"g","Frutta e verdura"],["Taleggio",80,"g","Latticini e uova"],["Cipolla",1,"pz","Frutta e verdura"],["Burro",20,"g","Latticini e uova"]],s:["Tosta il riso con la cipolla.","Aggiungi i funghi e porta a cottura col brodo.","Manteca con taleggio e burro."]},
- {id:"minestrone",n:"Minestrone con borlotti",t:"legumi",v:{b:"soup",c:"#c9883e",x:[["cube","#e8873a",6,6],["cube","#7dae55",6,6],["bean","#b77a6a",5,6],["cube","#efd9a0",4,6]]},i:[["Patate",200,"g","Frutta e verdura"],["Carota",2,"pz","Frutta e verdura"],["Zucchine",1,"pz","Frutta e verdura"],["Sedano",1,"costa","Frutta e verdura"],["Fagioli borlotti cotti",200,"g","Dispensa"]],s:["Taglia tutte le verdure a cubetti.","Cuoci in acqua salata per 40 minuti.","Servi con un filo d'olio."]},
+ {id:"minestrone",n:"Minestrone con borlotti",t:"fagioli",v:{b:"soup",c:"#c9883e",x:[["cube","#e8873a",6,6],["cube","#7dae55",6,6],["bean","#b77a6a",5,6],["cube","#efd9a0",4,6]]},i:[["Patate",200,"g","Frutta e verdura"],["Carota",2,"pz","Frutta e verdura"],["Zucchine",1,"pz","Frutta e verdura"],["Sedano",1,"costa","Frutta e verdura"],["Fagioli borlotti cotti",200,"g","Dispensa"]],s:["Taglia tutte le verdure a cubetti.","Cuoci in acqua salata per 40 minuti.","Servi con un filo d'olio."]},
  {id:"caprese",n:"Piadina con caprese",t:"latticini",v:{b:"wrap",c:"#efd6a0",x:[["round","#ffffff",3,12],["round","#e0443a",3,11],["leaf","#3f8f3a",3,6]]},i:[["Piadine",2,"pz","Pane e pasta"],["Mozzarella",250,"g","Latticini e uova"],["Pomodori",2,"pz","Frutta e verdura"],["Basilico",1,"mazzo","Frutta e verdura"]],s:["Scalda le piadine in padella.","Farcisci con mozzarella, pomodoro e basilico."]},
  {id:"scaloppine",n:"Scaloppine al vino bianco",t:"carne",v:{b:"none",x:[["fillet","#c99a6a",3,17],["dot","#f1e2b8",8,4],["leaf","#4f9a3a",4,5]]},i:[["Fesa di vitello a fette",350,"g","Carne"],["Vino bianco",100,"ml","Dispensa"],["Farina",2,"cucchiai","Dispensa"],["Insalata mista",1,"busta","Frutta e verdura"]],s:["Infarina le fettine e rosolale nel burro.","Sfuma con il vino e fai restringere.","Servi con l'insalata."]}
 ];
@@ -106,7 +107,7 @@ function openRanges(back){
 }
 
 /* ---------- Illustrazioni dei piatti (SVG generato) ---------- */
-const TABLE = {pesce:["#c8dae6","#b5cad9"],legumi:["#ead8bd","#dcc5a3"],carne:["#ecd0cc","#dfbcb6"],uova:["#ddd3ec","#cbbfe0"],latticini:["#ece5bd","#ddd4a3"]};
+const TABLE = {pesce:["#c8dae6","#b5cad9"],lenticchie:["#ead8bd","#dcc5a3"],fagioli:["#efd3e2","#e3bfd2"],ceci:["#cfe8e2","#b9dcd3"],carne:["#ecd0cc","#dfbcb6"],uova:["#ddd3ec","#cbbfe0"],latticini:["#ece5bd","#ddd4a3"]};
 function rng(seed){let h=2166136261;for(const c of seed)h=Math.imul(h^c.charCodeAt(0),16777619);return()=>{h+=0x6D2B79F5;let t=h;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
 const svgCache={};
 function dishSvg(r){
@@ -178,11 +179,14 @@ function hash36(s){let a=0xdeadbeef,b=0x41c6ce57;for(const c of s){const x=c.cha
   return((b>>>0).toString(36)+(a>>>0).toString(36))}
 const ID={plan:k=>pad15("p"+k),shopping:w=>pad15("w"+w),settings:()=>"settings0000000",photos:r=>pad15("ph"+hash36(r))};
 const defaults=()=>({plan:{},checks:{},have:{},photos:{},shopMode:"casa",
-  goals:{legumi:{min:3,max:null},pesce:{min:2,max:null},carne:{min:0,max:2},uova:{min:0,max:2},latticini:{min:0,max:3}},
+  goals:{lenticchie:{min:1,max:null},fagioli:{min:1,max:null},ceci:{min:1,max:null},pesce:{min:2,max:null},carne:{min:0,max:2},uova:{min:0,max:2},latticini:{min:0,max:3}},
   ranges:{c:[45,60],p:[15,25],f:[20,35],fib:8},times:{pranzo:"18:00",cena:"23:00"}});
 let S=defaults(),outbox=[],netOk=true;
 try{S=Object.assign(defaults(),JSON.parse(localStorage.getItem(CACHE))||{})}catch(e){}
 try{outbox=JSON.parse(localStorage.getItem(OUTBOX))||[]}catch(e){}
+// obiettivi salvati prima che i legumi fossero divisi in tre: tengo solo le categorie attuali, il resto dai default
+const normGoals=g=>{const d=defaults().goals;return Object.fromEntries(PROT.map(p=>[p,(g&&g[p])||d[p]]))};
+S.goals=normGoals(S.goals);
 function save(){try{localStorage.setItem(CACHE,JSON.stringify(S))}catch(e){}}
 function queue(col,id,data){data=JSON.parse(JSON.stringify(data));const e=outbox.find(x=>x.col===col&&x.id===id);
   if(e)Object.assign(e.data,data);else outbox.push({col,id,data});
@@ -213,14 +217,14 @@ async function flush(){
 function applyRec(col,r,del){
   if(col==="plan"){if(del)delete S.plan[r.date];else S.plan[r.date]={pranzo:r.pranzo??null,cena:r.cena??null}}
   else if(col==="shopping"){if(del){delete S.checks[r.week];delete S.have[r.week]}else{S.checks[r.week]=r.checks||{};S.have[r.week]=r.have||{}}}
-  else if(col==="settings"){if(!del)for(const f of ["goals","ranges","times"])if(r[f])S[f]=r[f]}
+  else if(col==="settings"){if(!del)for(const f of ["goals","ranges","times"])if(r[f])S[f]=f==="goals"?normGoals(r[f]):r[f]}
   else if(col==="photos"){if(del||!r.image)delete S.photos[r.recipe];else S.photos[r.recipe]=pb.files.getURL(r,r.image)}
 }
 // le modifiche locali non ancora inviate hanno la precedenza su quello che arriva dal server
 function applyPending(){for(const {col,data} of outbox){
   if(col==="plan"){const p=S.plan[data.date]=S.plan[data.date]||{pranzo:null,cena:null};for(const m of ["pranzo","cena"])if(m in data)p[m]=data[m]}
   else if(col==="shopping"){for(const f of ["checks","have"])if(f in data)S[f][data.week]=data[f]}
-  else if(col==="settings")Object.assign(S,data)}}
+  else if(col==="settings"){Object.assign(S,data);S.goals=normGoals(S.goals)}}}
 async function pull(){
   const [plan,shop,set,ph]=await Promise.all(COLS.map(c=>pb.collection(c).getFullList({batch:1000})));
   S.plan={};S.checks={};S.have={};S.photos={};
