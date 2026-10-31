@@ -17,7 +17,7 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - **Collezioni:** `plan` (un record per giorno), `shopping` (uno per settimana), `settings` (record unico), `photos` (una foto per ricetta, 960×600 JPEG; il record si cerca per `recipe`), `recipes`, `ingredients` (catalogo). Regole: solo utenti autenticati. Registrazione pubblica disattivata.
 - **Locale per dispositivo:** `shopMode` (Controllo a casa / Al mercato).
 - **Service worker:** file dell'app stale-while-revalidate, foto e font cache-first, `/api/` sempre in rete.
-- **Ricette nel database** (migrazione `1761980400_recipes.js`, che ha importato le 17 di esempio): `recipes` = nome, `cat`, `ingredients` `[[nome, quantità, unità]]` già per 2,5 porzioni, `steps`, `oil` (g per tutta la ricetta), `vis` (illustrazione), `archived` (eliminata: sparisce da elenco, selettore e riempimento ma resta nei pasti pianificati). `ingredients` = catalogo per nome: `dept` (reparto della spesa), `c`/`p`/`f`/`fib` per 100 g, `unit_g` (peso di un'unità). In `app.js` `rebuildRecipes()` costruisce `R` (attive), `byId` (tutte, più gli alias dei vecchi id tipo `ceci` → `rceci0000000000`) e `ING`. Id: ricette nuove casuali, ingredienti `i` + hash del nome.
+- **Ricette nel database** (migrazione `1761980400_recipes.js`, che ha importato le 17 di esempio): `recipes` = nome, `cat`, `ingredients` `[[nome, quantità, unità]]` già per 2,5 porzioni, `steps`, `oil` (g per tutta la ricetta), `vis` (illustrazione), `archived` (eliminata: sparisce da elenco, selettore e riempimento ma resta nei pasti pianificati). `ingredients` = catalogo per nome: `dept` (reparto della spesa), `prot` (fonte proteica, vuoto se non lo è), `c`/`p`/`f`/`fib` per 100 g, `unit_g` (peso di un'unità). `recipes.cat` è solo una copia: la categoria la calcola `recipeCat()` in `app.js`. In `app.js` `rebuildRecipes()` costruisce `R` (attive), `byId` (tutte, più gli alias dei vecchi id tipo `ceci` → `rceci0000000000`) e `ING`. Id: ricette nuove casuali, ingredienti `i` + hash del nome (casuale se quell'id è già preso da un ingrediente rinominato). La coda `outbox` gestisce anche le eliminazioni (`del: true`).
 - Online su https://cucinario.ededona.es: container su `127.0.0.1:8091`, nginx in Docker gestito con Ansible dal repo `infra` sulla Raspberry (`~/infra`, voce `cucinario` in `proxy_sites`).
 - Deploy: `./deploy.sh` (git pull + `docker compose up -d --build`), anche da cron ogni 5 minuti.
 - Backup: cron interno di PocketBase, lunedì 3:00, ultimi 8 in `pb_data/backups/`.
@@ -33,12 +33,15 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - Home pulita: nessuna impostazione in fondo alla pagina.
 
 ### Categorie = fonti proteiche
-Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi erano un'unica categoria, divisa in tre a novembre 2026). Ogni ricetta ne ha una.
+Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi erano un'unica categoria, divisa in tre a novembre 2026).
+- La categoria di una ricetta **non si sceglie**: ogni ingrediente può essere una fonte proteica, e la ricetta prende quella dell'ingrediente che porta più proteine (es. farro, ceci e feta → ceci).
+- Una ricetta senza ingredienti "fonte proteica" mostra "Nessuna fonte proteica", non conta per gli obiettivi e il riempimento automatico non la usa.
 
 ### Obiettivi settimanali
 - Per categoria: **almeno N** e/o **al massimo N** volte a settimana (pranzi + cene).
 - Default: lenticchie ≥1, fagioli ≥1, ceci ≥1, pesce ≥2, carne ≤2, uova ≤2, latticini ≤3. Obiettivi salvati con categorie che non esistono più (es. `legumi`) vengono completati con i default (`normGoals`).
-- In cima, **7 tessere fisse** su due righe (i tre legumi sopra): conteggio / obiettivo, verde se rispettato, arancione con "manca 1" o "+1 di troppo".
+- Accanto alla data della settimana, un'**icona**: ✓ verde se tutti gli obiettivi sono rispettati, ! arancione se no, grigia se la settimana è vuota.
+- Toccandola si apre il **resoconto**: 7 tessere su due righe (i tre legumi sopra) con conteggio / obiettivo, verde se rispettato, arancione con "manca 1" o "+1 di troppo"; da lì "Modifica obiettivi". (Prima le tessere stavano fisse in cima: troppo ingombranti con sette categorie.)
 - Il selettore avvisa cosa manca e mette prima le categorie che servono.
 
 ### Pasto fuori casa
@@ -76,10 +79,14 @@ Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi er
   - **Al mercato**: lista da spuntare con quantità ridotte; barra di avanzamento; presi in fondo; "Già in casa" in una riga in fondo. Deve funzionare **offline**.
 - Quantità "a casa" e spunte valgono per la settimana visualizzata.
 
-### Ricette: creare, modificare, eliminare
+### Ricette e ingredienti: creare, modificare, eliminare
 - Scheda Ricette → **＋ Nuova ricetta**; dal dettaglio di una ricetta (anche dal pasto in settimana) → **Modifica** / **Elimina**.
-- Editor: nome, fonte proteica, righe ingrediente (nome dal catalogo, quantità, unità), olio, procedimento (un passaggio per riga). Il pannello del bilanciamento si aggiorna mentre si scrive.
-- Ingrediente non ancora nel catalogo: la riga diventa arancione e chiede reparto, valori per 100 g e peso di un'unità; non si salva finché non sono inseriti. Cambiare i valori di un ingrediente esistente vale per tutte le ricette.
+- Editor: nome, righe ingrediente (nome dal catalogo, quantità, unità), olio, procedimento (un passaggio per riga). La fonte proteica e il pannello del bilanciamento si aggiornano mentre si scrive.
+- Ingrediente non ancora nel catalogo: la riga diventa arancione e chiede reparto, fonte proteica, valori per 100 g e peso di un'unità; non si salva finché non sono inseriti. Cambiare i valori di un ingrediente esistente vale per tutte le ricette.
+- **Catalogo ingredienti**: scheda Ricette → interruttore **Ricette / Ingredienti**. Elenco per reparto con ricerca, "in N ricette" e tag della fonte proteica; **＋ Nuovo**; toccando un ingrediente si modificano nome, reparto, fonte proteica e valori.
+  - **Rinominare** aggiorna il nome in tutte le ricette che lo usano (anche quelle eliminate).
+  - Cambiare la fonte proteica ricalcola la categoria delle ricette.
+  - **Eliminare** è possibile solo se nessuna ricetta lo usa (nemmeno eliminata): altrimenti mostra l'elenco delle ricette. Eliminare un ingrediente lo cancella davvero dal database.
 - Eliminare = archiviare; salvare dall'editor una ricetta eliminata la ripristina.
 
 ### Impostazioni (scheda in basso)

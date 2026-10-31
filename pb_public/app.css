@@ -1,4 +1,4 @@
-/* Layout: app a una colonna; header fisso; obiettivi proteici come 5 tessere; giorni con due slot illustrati; tab in basso */
+/* Layout: app a una colonna; header fisso con icona di bilanciamento della settimana; giorni con due slot illustrati; tab in basso */
 :root{
   color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
   --bg:#f3f5f1; --surface:#ffffff; --surface-2:#e8ece4; --fg:#1d2420; --muted:#66705f;
@@ -42,7 +42,8 @@ header .wrap{padding-block:12px 10px;display:flex;flex-direction:column;gap:8px}
 h1{font-family:var(--f-display);font-weight:700;font-size:22px;letter-spacing:-.01em;margin:0}
 .weeknav{display:flex;align-items:center;gap:6px}
 .weeknav .lbl{flex:1;text-align:center;font-weight:600;font-variant-numeric:tabular-nums}
-.weeknav .lbl small{display:block;font-weight:500;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.weeknav .lbl{min-width:0;white-space:nowrap}
+.weeknav .lbl small{display:block;font-weight:500;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em;overflow:hidden;text-overflow:ellipsis}
 .iconbtn{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);font-size:18px;flex:none}
 .btn{padding:9px 14px;border-radius:999px;font-weight:600;background:var(--accent);color:var(--accent-fg);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .btn.ghost{background:var(--surface);color:var(--fg);border:1px solid var(--line)}
@@ -61,8 +62,12 @@ h1{font-family:var(--f-display);font-weight:700;font-size:22px;letter-spacing:-.
 
 main .wrap{padding-block:12px 110px}
 
-/* obiettivi */
-/* 7 tessere su due righe: i tre legumi sopra (4/12 ciascuno), le altre quattro sotto (3/12) */
+/* bilanciamento della settimana: icona accanto alla data, il resoconto si apre toccandola */
+.wbal{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;flex:none;border:1.5px solid var(--line);background:var(--surface);color:var(--muted)}
+.wbal svg{width:20px;height:20px}
+.wbal.ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
+.wbal.warn{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
+/* obiettivi (nel resoconto): 7 tessere su due righe, i tre legumi sopra (4/12 ciascuno), le altre quattro sotto (3/12) */
 .goals{display:grid;grid-template-columns:repeat(12,1fr);gap:6px;width:100%;padding:0}
 .goals .goal{grid-column:span 3}
 .goals .goal:nth-child(-n+3){grid-column:span 4}
@@ -205,6 +210,7 @@ nav.tabs .wrap{display:grid;grid-template-columns:repeat(4,1fr)}
 .qstep .qv{min-width:60px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:14px}
 .item.home .qv{color:var(--muted);font-weight:600}
 .t-out{color:#fff;background:rgb(0 0 0 / .28)}
+.t-none{color:var(--muted);background:var(--surface-2)}
 .ph.out{background:#c8372d}
 .outcard{border-color:#d9544a}
 .outcard .meta{font-size:12.5px;color:var(--muted)}
@@ -295,3 +301,14 @@ nav.tabs button[aria-selected="true"]{color:var(--accent)}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 @media (max-width:360px){.goal .gnum{font-size:19px}.goal .gname{font-size:10px}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+
+/* catalogo ingredienti */
+.ingtools{display:flex;gap:8px;margin-bottom:12px}
+.ingtools .txt{flex:1;min-width:0;padding:9px 12px}
+button.item{background:none;font:inherit;color:inherit;cursor:pointer}
+.item .tag{flex:none}
+.iform{border-top:0;padding-top:0}
+.uses{margin:0;padding-left:20px;font-size:14px;display:flex;flex-direction:column;gap:2px}
+.uses small{color:var(--muted)}
+.catwarn{margin:0;font-size:12.5px;color:var(--warn);font-weight:600}
+.editor small.muted{color:var(--muted);font-size:13px}

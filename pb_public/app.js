@@ -9,18 +9,24 @@ const CATS = ["Frutta e verdura","Pesce","Carne","Latticini e uova","Pane e past
 /* ---------- Ricette e ingredienti (collezioni recipes e ingredients sul server) ----------
    Dentro l'app una ricetta è {id, n:nome, t:categoria, i:[[ingrediente, quantità, unità, reparto]], s:[passi], oil, v, archived},
    con le quantità già per 2 adulti + 1 bambina (2,5 porzioni). v = illustrazione: b = base del piatto, c = colore base,
-   x = elementi [forma, colore, quantità, grandezza]; senza v si usa quella della categoria (DEFV). */
+   x = elementi [forma, colore, quantità, grandezza]; senza v si usa quella della categoria (DEFV).
+   La categoria non si sceglie: è la fonte proteica (prot) dell'ingrediente che porta più proteine (vedi recipeCat). */
 const SERV=2.5,SERV_LBL="per 2 adulti e 1 bambina";
 let R=[],byId={},ING={}; // R = ricette attive (elenco, selettore, riempimento); byId comprende anche quelle eliminate; ING = catalogo per nome
+const grams=(q,u,x)=>(u==="g"||u==="ml")?q:q*((x&&x.unit_g)||100);
+// rows = [[nome, quantità, unità]]; look(nome) → valori dell'ingrediente. null se nessun ingrediente è una fonte proteica
+function recipeCat(rows,look){look=look||(n=>ING[n]);const sc={};
+  for(const [n,q,u] of rows){const x=look(n);if(x&&PROT.includes(x.prot))sc[x.prot]=(sc[x.prot]||0)+grams(+q||0,u,x)*((x.p||0)+.01)/100}
+  let best=null;for(const p in sc)if(best===null||sc[p]>sc[best])best=p;return best}
 function rebuildRecipes(){
   ING={};for(const id in S.ingr)ING[S.ingr[id].name]={...S.ingr[id],id};
   byId={};
-  for(const id in S.recipes){const x=S.recipes[id];
-    byId[id]={id,n:x.name||"",t:x.cat,v:x.vis||null,s:x.steps||[],oil:x.oil??25,archived:!!x.archived,
-      i:(x.ingredients||[]).map(([n,q,u])=>[n,q,u,(ING[n]||{}).dept||"Dispensa"])}}
+  for(const id in S.recipes){const x=S.recipes[id],rows=x.ingredients||[];
+    byId[id]={id,n:x.name||"",t:recipeCat(rows),v:x.vis||null,s:x.steps||[],oil:x.oil??25,archived:!!x.archived,
+      i:rows.map(([n,q,u])=>[n,q,u,(ING[n]||{}).dept||"Dispensa"])}}
   // pasti salvati quando le ricette stavano nel codice: "ceci" ora è il record "rceci0000000000"
   for(const id in S.recipes){const old=/^r([a-z]+)0*$/.exec(id);if(old&&!byId[old[1]])byId[old[1]]=byId[id]}
-  R=Object.keys(S.recipes).map(id=>byId[id]).filter(r=>!r.archived&&PROT.includes(r.t)).sort((a,b)=>a.n.localeCompare(b.n,"it"));
+  R=Object.keys(S.recipes).map(id=>byId[id]).filter(r=>!r.archived).sort((a,b)=>a.n.localeCompare(b.n,"it"));
   for(const k in nutCache)delete nutCache[k];for(const k in svgCache)delete svgCache[k];
 }
 // ingredienti in comune tra due ricette (escludo erbe e piccole cose che non cambiano il lavoro in cucina)
@@ -37,7 +43,7 @@ function nutrition(r,look){
   if(!look&&nutCache[r.id])return nutCache[r.id];
   let C=0,P=0,F=0,Fi=0;
   const add=(x,g)=>{C+=(x.c||0)*g/100;P+=(x.p||0)*g/100;F+=(x.f||0)*g/100;Fi+=(x.fib||0)*g/100};
-  for(const [n,q,u] of r.i){const x=(look||(n=>ING[n]))(n);if(x)add(x,(u==="g"||u==="ml")?q:q*(x.unit_g||100))}
+  for(const [n,q,u] of r.i){const x=(look||(n=>ING[n]))(n);if(x)add(x,grams(q,u,x))}
   add(OLIO,r.oil??25);
   C/=SERV;P/=SERV;F/=SERV;Fi/=SERV; // per porzione
   const kc=C*4,kp=P*4,kf=F*9,tot=kc+kp+kf||1;
@@ -173,8 +179,9 @@ const normGoals=g=>{const d=defaults().goals;return Object.fromEntries(PROT.map(
 S.goals=normGoals(S.goals);
 rebuildRecipes();
 function save(){try{localStorage.setItem(CACHE,JSON.stringify(S))}catch(e){}}
-function queue(col,id,data){data=JSON.parse(JSON.stringify(data));const e=outbox.find(x=>x.col===col&&x.id===id);
-  if(e)Object.assign(e.data,data);else outbox.push({col,id,data});
+function queue(col,id,data,del){data=JSON.parse(JSON.stringify(data||{}));const e=outbox.find(x=>x.col===col&&x.id===id);
+  if(del){if(e)outbox.splice(outbox.indexOf(e),1);outbox.push({col,id,data:{},del:true})}  // eliminazione: scarto le modifiche in coda
+  else if(e){if(e.del){e.del=false;e.data={}}Object.assign(e.data,data)}else outbox.push({col,id,data});
   try{localStorage.setItem(OUTBOX,JSON.stringify(outbox))}catch(e){}
   renderSync();clearTimeout(queue._t);queue._t=setTimeout(flush,300)}
 const queueSettings=f=>queue("settings",ID.settings(),{[f]:S[f]});
@@ -189,12 +196,12 @@ let flushing=false;
 async function flush(){
   if(flushing||!pb.authStore.token)return;flushing=true;
   try{while(outbox.length){const e=outbox[0],snap=JSON.stringify(e.data);
-    try{await upsert(e);netOk=true}
+    try{if(e.del)await pb.collection(e.col).delete(e.id).catch(err=>{if(err.status!==404)throw err});else await upsert(e);netOk=true}
     catch(err){
       if(!err.status){netOk=false;break}                     // niente rete: riprovo più tardi
       if(err.status===401||err.status===403){showLogin();break}
       console.warn("Modifica scartata dal server",e,err)}     // dato non valido: non blocco la coda
-    if(JSON.stringify(e.data)===snap)outbox.shift();          // se è cambiato mentre lo inviavo, lo rimando
+    if(outbox[0]===e&&JSON.stringify(e.data)===snap)outbox.shift(); // se è cambiato mentre lo inviavo, lo rimando
     try{localStorage.setItem(OUTBOX,JSON.stringify(outbox))}catch(e){}}}
   finally{flushing=false;renderSync()}
 }
@@ -205,11 +212,12 @@ function applyRec(col,r,del){
   else if(col==="settings"){if(!del)for(const f of ["goals","ranges","times"])if(r[f])S[f]=f==="goals"?normGoals(r[f]):r[f]}
   else if(col==="photos"){if(del||!r.image)delete S.photos[r.recipe];else S.photos[r.recipe]=pb.files.getURL(r,r.image)}
   else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,cat:r.cat,ingredients:r.ingredients||[],steps:r.steps||[],oil:r.oil,vis:r.vis,archived:r.archived}}
-  else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,dept:r.dept,c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
+  else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,dept:r.dept,prot:r.prot||"",c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
 }
 // le modifiche locali non ancora inviate hanno la precedenza su quello che arriva dal server
-function applyPending(){for(const {col,id,data} of outbox){
-  if(col==="plan"){const p=S.plan[data.date]=S.plan[data.date]||{pranzo:null,cena:null};for(const m of ["pranzo","cena"])if(m in data)p[m]=data[m]}
+function applyPending(){for(const {col,id,data,del} of outbox){
+  if(del){if(col==="ingredients")delete S.ingr[id];else if(col==="recipes")delete S.recipes[id]}
+  else if(col==="plan"){const p=S.plan[data.date]=S.plan[data.date]||{pranzo:null,cena:null};for(const m of ["pranzo","cena"])if(m in data)p[m]=data[m]}
   else if(col==="shopping"){for(const f of ["checks","have"])if(f in data)S[f][data.week]=data[f]}
   else if(col==="settings"){Object.assign(S,data);S.goals=normGoals(S.goals)}
   else if(col==="recipes")S.recipes[id]=Object.assign(S.recipes[id]||{},data);
@@ -241,30 +249,51 @@ const slot=(k,m)=>(S.plan[k]||{})[m]||null;
 const rid=v=>typeof v==="string"&&byId[v]?byId[v].id:null; // id attuale (anche dai vecchi id), null se la ricetta non esiste
 const outNote=v=>v&&typeof v==="object"?(v.o||""):null;
 function setSlot(k,m,id){S.plan[k]=S.plan[k]||{pranzo:null,cena:null};S.plan[k][m]=id;save();queue("plan",ID.plan(k),{date:k,[m]:id})}
-const tagHtml=t=>`<span class="tag t-${t}">${PNAME[t]}</span>`;
+const tagHtml=t=>t?`<span class="tag t-${t}">${PNAME[t]}</span>`:"";
+const catTag=t=>tagHtml(t)||`<span class="tag t-none">Nessuna fonte proteica</span>`;
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),1900)}
 
 /* ---------- Obiettivi ---------- */
-function counts(){const c=Object.fromEntries(PROT.map(p=>[p,0]));weekKeys().forEach(k=>["pranzo","cena"].forEach(m=>{const id=rid(slot(k,m));if(id)c[byId[id].t]++}));return c}
+function counts(){const c=Object.fromEntries(PROT.map(p=>[p,0]));weekKeys().forEach(k=>["pranzo","cena"].forEach(m=>{const id=rid(slot(k,m));if(id&&byId[id].t)c[byId[id].t]++}));return c}
 function status(p,c){const g=S.goals[p],n=c[p];
   if(g.min&&n<g.min)return{cls:"warn",txt:`manca ${g.min-n}`,need:g.min-n};
   if(g.max!=null&&n>g.max)return{cls:"warn",txt:`+${n-g.max} di troppo`,over:n-g.max};
   if(g.min||g.max!=null)return{cls:"ok",txt:"✓"};
   return{cls:"",txt:"libero"}}
 const goalLbl=g=>g.min&&g.max!=null?`${g.min}–${g.max}`:g.min?`≥${g.min}`:g.max!=null?`≤${g.max}`:"";
-function renderGoals(){
-  const c=counts();
-  $("#goals").innerHTML=PROT.map(p=>{const g=S.goals[p],st=status(p,c);
-    return `<span class="goal ${st.cls}"><span class="gname">${PNAME[p]}</span><span class="gnum">${c[p]}${goalLbl(g)?`<span> / ${goalLbl(g)}</span>`:""}</span><span class="gstate">${st.txt}</span></span>`}).join("");
+// bilanciamento della settimana: un'icona accanto alla data; il resoconto per fonte proteica si apre toccandola
+const BAL_ICO={ok:`<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 12.5 4 4 8-9"/></svg>`,
+  warn:`<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v9"/><circle cx="12" cy="19" r=".6" fill="currentColor"/></svg>`,
+  none:`<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v8M5.5 3v5a2.5 2.5 0 0 0 5 0V3M8 11v10M17 3c-2 0-3 3-3 7h3v11"/></svg>`};
+function weekBal(){const c=counts(),issues=PROT.map(p=>({p,...status(p,c)})).filter(s=>s.cls==="warn");
+  const any=weekKeys().some(k=>["pranzo","cena"].some(m=>rid(slot(k,m))));
+  return{c,issues,st:!any?"none":issues.length?"warn":"ok"}}
+const issueTxt=s=>`${PNAME[s.p]}: ${s.need?`manca${s.need>1?"no":""} ${s.need}`:`+${s.over} di troppo`}`;
+function renderGoals(){const {issues,st}=weekBal(),b=$("#wbal");
+  b.className="wbal "+st;b.innerHTML=BAL_ICO[st];
+  b.setAttribute("aria-label",st==="ok"?"Settimana bilanciata":st==="warn"?`Settimana da sistemare: ${issues.map(issueTxt).join(", ")}`:"Settimana vuota");
+  b.title=b.getAttribute("aria-label");
 }
-$("#goals").addEventListener("click",openGoals);
-function openGoals(){
-  const draw=()=>{$("#sheetBody").innerHTML=`<p style="margin:0 0 10px;color:var(--muted);font-size:13.5px">Quante volte a settimana, tra pranzi e cene. Le tessere in alto diventano arancioni quando un obiettivo non è rispettato.</p><div class="grows">${PROT.map(p=>{const g=S.goals[p];
+const goalsHtml=c=>`<div class="goals">${PROT.map(p=>{const g=S.goals[p],st=status(p,c);
+  return `<span class="goal ${st.cls}"><span class="gname">${PNAME[p]}</span><span class="gnum">${c[p]}${goalLbl(g)?`<span> / ${goalLbl(g)}</span>`:""}</span><span class="gstate">${st.txt}</span></span>`}).join("")}</div>`;
+function openWeekBal(){const {c,issues,st}=weekBal(),a=weekStart(),b=addDays(a,6);
+  openSheet(`Fonti proteiche<small>${weekName(offset)} · ${a.getDate()} ${MONTHS[a.getMonth()]} – ${b.getDate()} ${MONTHS[b.getMonth()]}</small>`,
+    `<div class="verdict ${st==="ok"?"ok":"warn"}"><b>${st==="ok"?"Settimana bilanciata":st==="warn"?"Da sistemare":"Settimana vuota"}</b><span>${st==="ok"?"Tutti gli obiettivi sono rispettati.":st==="warn"?issues.map(issueTxt).join(" · "):"Nessun pasto ancora: prova «✦ Riempi»."}</span></div>
+     <p style="margin:12px 0 8px;color:var(--muted);font-size:13.5px">Quante volte in settimana, tra pranzi e cene, rispetto all'obiettivo.</p>${goalsHtml(c)}
+     <div class="row" style="margin-top:14px"><button class="btn ghost" data-goals>Modifica obiettivi</button></div>`);
+  $("#sheetBody").onclick=e=>{if(e.target.closest("[data-goals]"))openGoals(openWeekBal)};
+}
+$("#wbal").addEventListener("click",openWeekBal);
+function openGoals(back){
+  if(typeof back!=="function")back=null;
+  const draw=()=>{$("#sheetBody").innerHTML=`<p style="margin:0 0 10px;color:var(--muted);font-size:13.5px">Quante volte a settimana, tra pranzi e cene. L'icona accanto alla data diventa arancione quando un obiettivo non è rispettato.</p><div class="grows">${PROT.map(p=>{const g=S.goals[p];
     return `<div class="grow"><div class="gtop">${tagHtml(p)}<span style="color:var(--muted);font-size:13px">${goalLbl(g)?goalLbl(g)+" a settimana":"nessun vincolo"}</span></div>
     <div class="gctl"><div class="stepper"><label>Almeno</label><div><button data-p="${p}" data-f="min" data-d="-1" aria-label="Meno">−</button><output>${g.min||"—"}</output><button data-p="${p}" data-f="min" data-d="1" aria-label="Più">+</button></div></div>
-    <div class="stepper"><label>Al massimo</label><div><button data-p="${p}" data-f="max" data-d="-1" aria-label="Meno">−</button><output>${g.max==null?"—":g.max}</output><button data-p="${p}" data-f="max" data-d="1" aria-label="Più">+</button></div></div></div></div>`}).join("")}</div>`};
+    <div class="stepper"><label>Al massimo</label><div><button data-p="${p}" data-f="max" data-d="-1" aria-label="Meno">−</button><output>${g.max==null?"—":g.max}</output><button data-p="${p}" data-f="max" data-d="1" aria-label="Più">+</button></div></div></div></div>`}).join("")}</div>
+    ${back?`<div style="margin-top:12px"><button class="btn" data-back>Torna al resoconto</button></div>`:""}`};
   openSheet("Obiettivi settimanali","");draw();
-  $("#sheetBody").onclick=e=>{const b=e.target.closest("[data-p]");if(!b)return;const g=S.goals[b.dataset.p],d=+b.dataset.d;
+  $("#sheetBody").onclick=e=>{if(e.target.closest("[data-back]")){back();return}
+    const b=e.target.closest("[data-p]");if(!b)return;const g=S.goals[b.dataset.p],d=+b.dataset.d;
     if(b.dataset.f==="min"){g.min=Math.max(0,Math.min(14,(g.min||0)+d));if(g.max!=null&&g.max<g.min)g.max=g.min}
     else{ if(g.max==null){if(d<0)g.max=7}else{g.max+=d;if(g.max>7)g.max=null;else if(g.max<0)g.max=0} if(g.max!=null&&g.min>g.max)g.min=g.max}
     save();queueSettings("goals");draw();renderGoals()};
@@ -276,11 +305,11 @@ function renderHeader(){
   const range=a.getMonth()===b.getMonth()?`${a.getDate()}–${b.getDate()} ${MONTHS[b.getMonth()]}`:`${a.getDate()} ${MONTHS[a.getMonth()]} – ${b.getDate()} ${MONTHS[b.getMonth()]}`;
   const name=offset===0?"Questa settimana":offset===1?"Prossima settimana":offset===-1?"Settimana scorsa":(offset>0?`Tra ${offset} settimane`:`${-offset} settimane fa`);
   $("#weeklbl").innerHTML=`<small>${name}</small>${range}`;
-  $("#title").textContent={week:"Settimana",shop:"Lista della spesa",rec:"Ricette",set:"Impostazioni"}[tab];
+  $("#title").textContent={week:"Settimana",shop:"Lista della spesa",rec:recMode==="ing"?"Ingredienti":"Ricette",set:"Impostazioni"}[tab];
   $("#weeknav").hidden=tab==="rec"||tab==="set";
   $("#topRow").hidden=tab==="week";
   $("#autoBtn").hidden=tab!=="week";
-  $("#goals").hidden=tab!=="week";
+  $("#wbal").hidden=tab!=="week";
 }
 
 /* ---------- Orari: quando un pasto è passato ---------- */
@@ -410,11 +439,11 @@ function closeSheet(){$("#sheet").classList.remove("open");$("#scrim").classList
 $("#scrim").onclick=closeSheet;$("#closeSheet").onclick=closeSheet;
 const slotLabel=(k,m)=>{const d=new Date(k+"T12:00");return `${DAYS[(d.getDay()+6)%7]} ${d.getDate()} ${MONTHS[d.getMonth()]} · ${m}`};
 function filtersHtml(active){return [null,...PROT].map(t=>`<button data-f="${t||""}" aria-pressed="${(t||null)===active}">${t?PNAME[t]:"Tutte"}</button>`).join("")}
-function cardHtml(r,cur,showBal,extra){const ok=!checkBalance(nutrition(r)).length;return `<button class="rcard${cur?" current":""}" data-id="${r.id}">${photoHtml(r)}<span class="rinfo"><span class="rname">${esc(r.n)}</span><span class="row" style="gap:6px">${tagHtml(r.t)}</span>${extra||""}</span>${showBal&&!ok?`<span class="warnico" title="Da rivedere" aria-label="Da rivedere"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z" fill="currentColor"/><path d="M12 9v5" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="1.4" fill="var(--surface)"/></svg></span>`:""}</button>`}
+function cardHtml(r,cur,showBal,extra){const ok=!checkBalance(nutrition(r)).length;return `<button class="rcard${cur?" current":""}" data-id="${r.id}">${photoHtml(r)}<span class="rinfo"><span class="rname">${esc(r.n)}</span><span class="row" style="gap:6px">${catTag(r.t)}</span>${extra||""}</span>${showBal&&!ok?`<span class="warnico" title="Da rivedere" aria-label="Da rivedere"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z" fill="currentColor"/><path d="M12 9v5" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="1.4" fill="var(--surface)"/></svg></span>`:""}</button>`}
 
 function openPicker(k,m,f){
   const cur=rid(slot(k,m)),c=counts();
-  if(cur)c[byId[cur].t]--; // il pasto che sto sostituendo non conta
+  if(cur&&byId[cur].t)c[byId[cur].t]--; // il pasto che sto sostituendo non conta
   const miss=PROT.filter(p=>S.goals[p].min&&c[p]<S.goals[p].min);
   // ricette che condividono ingredienti con la cena di ieri (per il pranzo) o col pranzo di domani (per la cena)
   const nextLunch=()=>{const v=(S.plan[key(addDays(new Date(k+"T12:00"),1))]||{}).pranzo;return typeof v==="string"?byId[v]:null};
@@ -448,7 +477,7 @@ function openOut(k,m){
     else if(e.target.closest("[data-remove]")){setSlot(k,m,null);closeSheet();renderAll();toast("Pasto tolto")}};
 }
 function fmtQty(q,u){const n=Math.round(q*10)/10;if(u==="g"&&n>=1000)return(n/1000).toString().replace(".",",")+" kg";return `${String(n).replace(".",",")} ${u}`}
-function recipeHtml(r){return photoHtml(r,"hero")+`<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="row">${tagHtml(r.t)}<span style="color:var(--muted);font-size:13px">${SERV_LBL}</span></span>
+function recipeHtml(r){return photoHtml(r,"hero")+`<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="row">${catTag(r.t)}<span style="color:var(--muted);font-size:13px">${SERV_LBL}</span></span>
   <label class="btn ghost filebtn" style="padding:6px 12px;font-size:13px">${S.photos[r.id]?"Cambia foto":"Aggiungi foto"}<input type="file" accept="image/*" data-photo="${r.id}"></label></div>
   ${nutHtml(nutrition(r))}
   <ul class="ing">${r.i.map(x=>`<li><span>${esc(x[0])}</span><span>${fmtQty(x[1],x[2])}</span></li>`).join("")}</ul>
@@ -496,9 +525,24 @@ const num=x=>String(+x||0).replace(".",",");
 const randId=()=>{const a="abcdefghijklmnopqrstuvwxyz0123456789";return Array.from(crypto.getRandomValues(new Uint8Array(15)),x=>a[x%36]).join("")};
 // nome come sta nel catalogo (ignoro maiuscole e spazi doppi), così "cipolla" usa "Cipolla"
 const canon=n=>{n=String(n).trim().replace(/\s+/g," ");const k=n.toLowerCase();return Object.keys(ING).find(x=>x.toLowerCase()===k)||n};
+const INGF=["dept","prot","c","p","f","fib","unit_g"];
+// reparto, fonte proteica, valori per 100 g e peso di un'unità; a = attributi in più sugli input (es. la riga dell'editor)
+function ingFieldsHtml(v,a){a=a||"";
+  const num=(k,l,ph,cls)=>`<label${cls?` class="${cls}"`:""}><span>${l}</span><input class="txt" type="number" inputmode="decimal" min="0" step="any" ${a} data-v="${k}" value="${v[k]||""}" placeholder="${ph||0}"></label>`;
+  return `<label><span>Reparto</span><select class="txt" ${a} data-v="dept">${CATS.map(c=>`<option${c===v.dept?" selected":""}>${c}</option>`).join("")}</select></label>
+    <label><span>Fonte proteica</span><select class="txt" ${a} data-v="prot"><option value="">Nessuna</option>${PROT.map(p=>`<option value="${p}"${p===v.prot?" selected":""}>${PNAME[p]}</option>`).join("")}</select></label>
+    ${NUTF.map(([k,l])=>num(k,l+" (g)")).join("")}${num("unit_g","Peso di 1 unità in grammi (pz, mazzo, spicchio…)","—","wide")}`}
+const ingData=(name,v)=>({name,dept:v.dept||"Dispensa",prot:PROT.includes(v.prot)?v.prot:"",c:+v.c||0,p:+v.p||0,f:+v.f||0,fib:+v.fib||0,unit_g:+v.unit_g||0});
+const sameIng=(a,b)=>a&&b&&a.name===b.name&&INGF.every(k=>(a[k]||0)===(b[k]||0));
+// id deterministico dal nome; se è già preso (ingrediente rinominato) ne uso uno casuale
+const newIngId=n=>{const id=ID.ingredients(n);return S.ingr[id]?randId():id};
+const usesOf=n=>Object.keys(S.recipes).filter(id=>(S.recipes[id].ingredients||[]).some(x=>x[0]===n)).map(id=>byId[id]);
+// dopo un cambio al catalogo: le ricette che usano quegli ingredienti tengono aggiornata la copia della categoria sul server
+function syncCats(names){for(const n of names)for(const r of usesOf(n)){const cat=r.t||"";
+  if((S.recipes[r.id].cat||"")!==cat){S.recipes[r.id].cat=cat;queue("recipes",r.id,{cat})}}}
 function openEditor(id,back){
   const r=id?byId[id]:null;
-  const d={n:r?r.n:"",t:r?r.t:recFilter,oil:r?r.oil:25,s:r?r.s.join("\n"):"",open:-1,
+  const d={n:r?r.n:"",oil:r?r.oil:25,s:r?r.s.join("\n"):"",open:-1,
     rows:r?r.i.map(([n,q,u])=>({n,q:String(q),u})):[{n:"",q:"",u:"g"}],
     ing:{}}; // valori degli ingredienti nuovi o modificati qui, per nome; finiscono nel catalogo al salvataggio
   const vals=n=>d.ing[n]||ING[n]||null;
@@ -506,12 +550,10 @@ function openEditor(id,back){
   const info=x=>{const n=canon(x.n);if(!n)return["",""];const v=vals(n);
     if(!v)return["warn","Nuovo ingrediente: tocca qui per reparto e valori"];
     if(!(x.u==="g"||x.u==="ml")&&!v.unit_g)return["warn",`Quanto pesa 1 ${x.u}? Tocca qui`];
-    return["",`${v.dept} · per 100 g: carb ${num(v.c)} · prot ${num(v.p)} · grassi ${num(v.f)} · fibre ${num(v.fib)}`]};
+    return["",`${v.dept}${v.prot?" · fonte proteica: "+PSING[v.prot]:""} · per 100 g: carb ${num(v.c)} · prot ${num(v.p)} · grassi ${num(v.f)} · fibre ${num(v.fib)}`]};
   const valsHtml=i=>{const n=canon(d.rows[i].n),v=d.ing[n];
-    const num=(k,l)=>`<label><span>${l}</span><input class="txt" type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-v="${k}" value="${v[k]||""}" placeholder="0"></label>`;
     return `<div class="evals"><p>${ING[n]?`Valori di <b>${esc(n)}</b> nel catalogo: cambiano per tutte le ricette che lo usano.`:`<b>${esc(n)}</b> non è ancora nel catalogo. Valori per 100 g, come sull'etichetta.`}</p>
-      <label class="wide"><span>Reparto</span><select class="txt" data-i="${i}" data-v="dept">${CATS.map(c=>`<option${c===v.dept?" selected":""}>${c}</option>`).join("")}</select></label>
-      ${NUTF.map(([k,l])=>num(k,l+" (g)")).join("")}<label class="wide"><span>Peso di 1 unità in grammi (pz, mazzo, spicchio…)</span><input class="txt" type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-v="unit_g" value="${v.unit_g||""}" placeholder="—"></label></div>`};
+      ${ingFieldsHtml(v,`data-i="${i}"`)}</div>`};
   const rowHtml=(x,i)=>{const [cls,txt]=info(x);return `<div class="erow">
      <input class="txt" list="ingList" data-i="${i}" data-f="n" value="${esc(x.n)}" placeholder="Ingrediente" aria-label="Ingrediente" autocomplete="off">
      <input class="txt" type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-f="q" value="${esc(x.q)}" placeholder="Q.tà" aria-label="Quantità">
@@ -521,13 +563,16 @@ function openEditor(id,back){
      ${d.open===i&&canon(x.n)?valsHtml(i):""}</div>`};
   const refresh=()=>{
     const rows=valid();
+    const cat=recipeCat(rows.map(x=>[canon(x.n),+x.q,x.u]),vals),from=[...new Set(rows.map(x=>canon(x.n)).filter(n=>(vals(n)||{}).prot===cat))];
+    $("#edCat").innerHTML=cat?`<span class="row">${tagHtml(cat)}<small class="muted">da ${esc(from.join(", ").toLowerCase())}</small></span>`
+      :`<p class="catwarn">Nessun ingrediente è una fonte proteica: la ricetta non conterà per gli obiettivi e il riempimento automatico non la userà. Per indicarla, tocca la riga sotto l'ingrediente principale.</p>`;
     $("#edNut").innerHTML=rows.length?nutHtml(nutrition({oil:+d.oil||0,i:rows.map(x=>[canon(x.n),+x.q,x.u])},vals),true)
       :`<p class="shopnote">Aggiungi gli ingredienti con le quantità: qui vedrai se il pasto è bilanciato.</p>`;
     document.querySelectorAll("#sheetBody .einfo").forEach((b,i)=>{const [cls,txt]=info(d.rows[i]);b.className="einfo "+cls;b.textContent=txt;b.hidden=!txt})};
   const draw=()=>{
     $("#sheetBody").innerHTML=`<div class="editor">
       <label class="ef"><span>Nome</span><input class="txt" id="edName" value="${esc(d.n)}" placeholder="Es. Pasta e ceci" autocomplete="off"></label>
-      <div class="ef"><span>Fonte proteica</span><div class="filters wrapf">${PROT.map(p=>`<button data-cat="${p}" aria-pressed="${d.t===p}">${PNAME[p]}</button>`).join("")}</div></div>
+      <div class="ef"><span>Fonte proteica <small>dagli ingredienti</small></span><div id="edCat"></div></div>
       <div class="ef"><span>Ingredienti <small>${SERV_LBL}</small></span><div class="erows">${d.rows.map(rowHtml).join("")}</div>
         <button class="btn ghost" data-add>＋ Ingrediente</button></div>
       <label class="ef"><span>Olio per tutta la ricetta, in grammi <small>circa 10 g a testa</small></span><input class="txt" id="edOil" type="number" inputmode="decimal" min="0" step="any" value="${esc(d.oil)}"></label>
@@ -541,20 +586,19 @@ function openEditor(id,back){
   const doSave=()=>{
     const name=d.n.trim(),rows=d.rows.filter(x=>x.n.trim()||x.q);
     if(!name)return fail("Manca il nome della ricetta.");
-    if(!d.t)return fail("Scegli la fonte proteica.");
     if(!rows.length)return fail("Aggiungi almeno un ingrediente.");
     if(rows.some(x=>!x.n.trim()||!(+x.q>0)))return fail("Ogni ingrediente ha bisogno di nome e quantità.");
     const fresh=[...new Set(rows.map(x=>canon(x.n)))].filter(n=>!vals(n));
     if(fresh.length)return fail(`Inserisci reparto e valori di: ${fresh.join(", ")} (tocca la riga arancione sotto l'ingrediente).`);
     // catalogo: ingredienti nuovi o con valori cambiati
-    for(const n of new Set(rows.map(x=>canon(x.n)))){const v=d.ing[n];if(!v)continue;const old=ING[n];
-      const data={name:n,dept:v.dept||"Dispensa",c:+v.c||0,p:+v.p||0,f:+v.f||0,fib:+v.fib||0,unit_g:+v.unit_g||0};
-      if(old&&["dept","c","p","f","fib","unit_g"].every(k=>(old[k]||0)===data[k]))continue;
-      const iid=old?old.id:ID.ingredients(n);S.ingr[iid]=data;queue("ingredients",iid,data)}
-    const nid=r?r.id:randId();
-    const data={name,cat:d.t,ingredients:rows.map(x=>[canon(x.n),+x.q,x.u]),steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),oil:+d.oil||0,archived:false};
+    const touched=[];
+    for(const n of new Set(rows.map(x=>canon(x.n)))){const v=d.ing[n];if(!v)continue;const old=ING[n],data=ingData(n,v);
+      if(sameIng(old,data))continue;
+      const iid=old?old.id:newIngId(n);S.ingr[iid]=data;queue("ingredients",iid,data);touched.push(n)}
+    const nid=r?r.id:randId(),ingr=rows.map(x=>[canon(x.n),+x.q,x.u]);
+    const data={name,cat:recipeCat(ingr,vals)||"",ingredients:ingr,steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),oil:+d.oil||0,archived:false};
     S.recipes[nid]=Object.assign(S.recipes[nid]||{vis:null},data);queue("recipes",nid,data);
-    rebuildRecipes();save();renderAll();toast(r?"Ricetta salvata":"Ricetta aggiunta");openRecipe(nid)};
+    rebuildRecipes();syncCats(touched);save();renderAll();toast(r?"Ricetta salvata":"Ricetta aggiunta");openRecipe(nid)};
   openSheet(r?`Modifica ricetta<small>${esc(r.n)}</small>`:"Nuova ricetta","");draw();
   const body=$("#sheetBody");
   body.oninput=e=>{const t=e.target,i=+t.dataset.i;
@@ -566,13 +610,63 @@ function openEditor(id,back){
   body.onchange=e=>{const t=e.target;if(t.dataset.f!=="n")return;const i=+t.dataset.i;d.rows[i].n=canon(t.value);t.value=d.rows[i].n;
     if(d.open===i){const n=d.rows[i].n;if(n&&!d.ing[n])d.ing[n]={...(ING[n]||{dept:"Dispensa"})};draw()}else refresh()};
   body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
-    if(b.dataset.cat){d.t=b.dataset.cat;body.querySelectorAll("[data-cat]").forEach(x=>x.setAttribute("aria-pressed",x===b))}
-    else if("add" in b.dataset){d.rows.push({n:"",q:"",u:"g"});draw();body.querySelector(`[data-i="${d.rows.length-1}"][data-f="n"]`).focus()}
+    if("add" in b.dataset){d.rows.push({n:"",q:"",u:"g"});draw();body.querySelector(`[data-i="${d.rows.length-1}"][data-f="n"]`).focus()}
     else if(b.dataset.del){const i=+b.dataset.del;d.rows.splice(i,1);if(!d.rows.length)d.rows.push({n:"",q:"",u:"g"});d.open=d.open===i?-1:d.open>i?d.open-1:d.open;draw()}
     else if(b.dataset.open){const i=+b.dataset.open,n=canon(d.rows[i].n);d.open=d.open===i?-1:i;if(d.open===i&&!d.ing[n])d.ing[n]={...(ING[n]||{dept:"Dispensa"})};draw()}
     else if("save" in b.dataset)doSave();
     else if("cancel" in b.dataset){if(back)back();else closeSheet()}};
 }
+
+/* ---------- Catalogo degli ingredienti ---------- */
+let ingQuery="";
+function renderIng(){
+  const q=ingQuery.trim().toLowerCase(),all=Object.keys(S.ingr).map(id=>({id,...S.ingr[id]}));
+  const list=all.filter(x=>!q||x.name.toLowerCase().includes(q));
+  const nUses=Object.fromEntries(all.map(x=>[x.name,usesOf(x.name).length]));
+  $("#ingCat").innerHTML=!all.length?`<p class="empty-note">Nessun ingrediente.<br>Aggiungilo con «Nuovo».</p>`:!list.length?`<p class="empty-note">Nessun ingrediente con «${esc(ingQuery.trim())}».</p>`:
+    CATS.map(c=>{const its=list.filter(x=>(x.dept||"Dispensa")===c).sort((a,b)=>a.name.localeCompare(b.name,"it"));if(!its.length)return"";
+      return `<div class="cat"><h3>${c}</h3><div class="items">${its.map(x=>`<button class="item" data-ing="${x.id}"><span class="iname"><b>${esc(x.name)}</b>
+        <small>${nUses[x.name]?`in ${nUses[x.name]} ${nUses[x.name]===1?"ricetta":"ricette"}`:"non usato"} · ${Math.round((x.c||0)*4+(x.p||0)*4+(x.f||0)*9)} kcal per 100 g</small></span>${tagHtml(x.prot)}</button>`).join("")}</div></div>`}).join("");
+}
+function openIngredient(id){
+  const old=id?S.ingr[id]:null,v=old?{...old}:{name:ingQuery.trim(),dept:"Dispensa",prot:""};
+  const uses=old?usesOf(old.name):[];
+  openSheet(old?`Ingrediente<small>${esc(old.name)}</small>`:"Nuovo ingrediente",`<div class="editor">
+    <label class="ef"><span>Nome</span><input class="txt" id="igName" value="${esc(v.name)}" placeholder="Es. Ceci cotti" autocomplete="off"></label>
+    <div class="evals iform"><p>Valori per 100 g, come sull'etichetta. Se è una fonte proteica, le ricette che lo usano prendono la sua categoria.</p>${ingFieldsHtml(v)}</div>
+    ${uses.length?`<div class="ef"><span>Usato in ${uses.length} ${uses.length===1?"ricetta":"ricette"} <small>i cambiamenti valgono per tutte</small></span>
+      <ul class="uses">${uses.map(r=>`<li>${esc(r.n)}${r.archived?" <small>(eliminata)</small>":""}</li>`).join("")}</ul></div>`:""}
+    <p class="hint" id="igErr" hidden></p>
+    <div class="row"><button class="btn" data-save>Salva</button><button class="btn ghost" data-cancel>Annulla</button>${old&&!uses.length?`<button class="btn ghost" data-delete>Elimina</button>`:""}</div>
+    ${old&&uses.length?`<p class="shopnote" style="margin:0">Non si può eliminare finché è usato in una ricetta: prima toglilo da ${uses.length===1?"quella ricetta":"quelle ricette"}.</p>`:""}
+    <div id="delBox"></div></div>`);
+  if(!old)setTimeout(()=>$("#igName").focus(),260);
+  const fail=msg=>{const el=$("#igErr");el.textContent=msg;el.hidden=false;el.scrollIntoView({block:"center",behavior:"smooth"})};
+  const body=$("#sheetBody");
+  body.oninput=e=>{const t=e.target;if(t.id==="igName")v.name=t.value;else if(t.dataset.v)v[t.dataset.v]=t.value};
+  body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if("cancel" in b.dataset)closeSheet();
+    else if("delete" in b.dataset){$("#delBox").innerHTML=`<div class="confirm"><p>Eliminare <b>${esc(old.name)}</b> dal catalogo?</p>
+      <div class="row"><button class="btn danger" data-confirm>Elimina</button><button class="btn ghost" data-nodel>Annulla</button></div></div>`;$("#delBox").scrollIntoView({block:"nearest",behavior:"smooth"})}
+    else if("nodel" in b.dataset)$("#delBox").innerHTML="";
+    else if("confirm" in b.dataset){if(usesOf(old.name).length)return fail("Nel frattempo è stato usato in una ricetta: non si può eliminare.");
+      delete S.ingr[id];queue("ingredients",id,null,true);rebuildRecipes();save();closeSheet();renderAll();toast("Ingrediente eliminato")}
+    else if("save" in b.dataset){
+      const name=v.name.trim().replace(/\s+/g," ");if(!name)return fail("Manca il nome dell'ingrediente.");
+      const dup=Object.keys(S.ingr).find(x=>x!==id&&S.ingr[x].name.toLowerCase()===name.toLowerCase());
+      if(dup)return fail(`C'è già «${S.ingr[dup].name}» nel catalogo.`);
+      const data=ingData(name,v);
+      if(sameIng(old,data)){closeSheet();return}
+      const iid=old?id:newIngId(name);S.ingr[iid]=data;queue("ingredients",iid,data);
+      // nome cambiato: lo cambio anche nelle ricette che lo usano
+      if(old&&old.name!==name)for(const r of uses){const ingredients=S.recipes[r.id].ingredients.map(x=>x[0]===old.name?[name,...x.slice(1)]:x);
+        S.recipes[r.id].ingredients=ingredients;queue("recipes",r.id,{ingredients})}
+      rebuildRecipes();syncCats([name]);save();closeSheet();renderAll();
+      toast(old?(uses.length?`Ingrediente salvato, ${uses.length} ${uses.length===1?"ricetta aggiornata":"ricette aggiornate"}`:"Ingrediente salvato"):"Ingrediente aggiunto")}};
+}
+$("#ingCat").addEventListener("click",e=>{const b=e.target.closest("[data-ing]");if(b)openIngredient(b.dataset.ing)});
+$("#newIng").addEventListener("click",()=>openIngredient(null));
+$("#ingSearch").addEventListener("input",e=>{ingQuery=e.target.value;renderIng()});
 
 /* ---------- Spesa ---------- */
 function shoppingList(){
@@ -623,12 +717,16 @@ $("#resetChecks").onclick=()=>{S.checks[wk()]={};save();queueShop(wk(),"checks")
 $("#shopMode").addEventListener("click",e=>{const b=e.target.closest("[data-mode]");if(!b)return;S.shopMode=b.dataset.mode;save();renderShop();window.scrollTo(0,0)});
 
 /* ---------- Ricette ---------- */
+let recMode="rec"; // ricette o catalogo degli ingredienti
 function renderRec(){
+  document.querySelectorAll("#recMode button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===recMode));
+  $("#recPane").hidden=recMode!=="rec";$("#ingPane").hidden=recMode!=="ing";renderIng();
   $("#recFilters").innerHTML=filtersHtml(recFilter);
   const list=R.filter(r=>!recFilter||r.t===recFilter);
   $("#recList").innerHTML=list.length?list.map(r=>cardHtml(r,false,true)).join(""):`<p class="empty-note">Nessuna ricetta${recFilter?` di ${PSING[recFilter]}`:""}.<br>Aggiungila con «Nuova ricetta».</p>`;
 }
 $("#newRec").addEventListener("click",()=>openEditor(null));
+$("#recMode").addEventListener("click",e=>{const b=e.target.closest("[data-mode]");if(!b)return;recMode=b.dataset.mode;renderRec();renderHeader();window.scrollTo(0,0)});
 $("#recFilters").addEventListener("click",e=>{const b=e.target.closest("[data-f]");if(!b)return;recFilter=b.dataset.f||null;renderRec()});
 $("#recList").addEventListener("click",e=>{const b=e.target.closest("[data-id]");if(b)openRecipe(b.dataset.id)});
 

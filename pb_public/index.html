@@ -41,10 +41,10 @@
     <div class="weeknav" id="weeknav">
       <button class="iconbtn" id="prev" aria-label="Settimana precedente">‹</button>
       <button class="lbl" id="weeklbl" aria-label="Torna a oggi"></button>
+      <button class="wbal" id="wbal"></button>
       <button class="iconbtn" id="next" aria-label="Settimana successiva">›</button>
       <button class="btn" id="autoBtn">✦ Riempi</button>
     </div>
-    <button class="goals" id="goals" aria-label="Obiettivi della settimana, tocca per modificarli"></button>
     <p class="sync" id="sync" role="status" hidden></p>
   </div>
 </header>
@@ -69,9 +69,19 @@
     </section>
 
     <section id="v-rec" hidden>
-      <button class="btn newrec" id="newRec">＋ Nuova ricetta</button>
-      <div class="filters" id="recFilters"></div>
-      <div class="rlist" id="recList"></div>
+      <div class="seg" id="recMode" role="group" aria-label="Ricette o ingredienti">
+        <button data-mode="rec" aria-pressed="true">Ricette</button>
+        <button data-mode="ing" aria-pressed="false">Ingredienti</button>
+      </div>
+      <div id="recPane">
+        <button class="btn newrec" id="newRec">＋ Nuova ricetta</button>
+        <div class="filters" id="recFilters"></div>
+        <div class="rlist" id="recList"></div>
+      </div>
+      <div id="ingPane" hidden>
+        <div class="ingtools"><input class="txt" type="search" id="ingSearch" placeholder="Cerca un ingrediente" aria-label="Cerca un ingrediente" autocomplete="off"><button class="btn" id="newIng">＋ Nuovo</button></div>
+        <div id="ingCat"></div>
+      </div>
     </section>
 
     <section id="v-set" hidden>

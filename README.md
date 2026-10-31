@@ -95,8 +95,8 @@ Con Docker: `docker compose up --build`, poi <http://127.0.0.1:8091>.
 | `settings` | `goals`, `ranges`, `times` | `settings0000000` |
 | `photos` | `recipe`, `image` | `ph` + hash dell'id ricetta |
 | `recipes` | `name`, `cat`, `ingredients` (`[[nome, quantità, unità]]`), `steps`, `oil`, `vis`, `archived` | casuale; le 17 di esempio `r` + vecchio id |
-| `ingredients` | `name`, `dept`, `c`/`p`/`f`/`fib` per 100 g, `unit_g` | `i` + hash del nome |
+| `ingredients` | `name`, `dept`, `prot` (fonte proteica), `c`/`p`/`f`/`fib` per 100 g, `unit_g` | `i` + hash del nome |
 
 Gli id sono deterministici, così ogni telefono sa quale record aggiornare anche se è stato creato dall'altro. Ogni modifica finisce in una coda locale (`localStorage`) e parte appena c'è rete; il server rimanda le modifiche all'altro telefono in tempo reale. Se due modifiche toccano lo stesso campo, vince l'ultima.
 
-Le ricette si creano, modificano ed eliminano dall'app (scheda Ricette). Eliminare una ricetta la archivia: resta visibile nei pasti già pianificati.
+Ricette e ingredienti si creano, modificano ed eliminano dall'app (scheda Ricette, interruttore Ricette / Ingredienti). Eliminare una ricetta la archivia: resta visibile nei pasti già pianificati. Un ingrediente si può eliminare solo se nessuna ricetta lo usa; rinominarlo aggiorna le ricette. La fonte proteica di una ricetta viene dagli ingredienti (`prot`), non si sceglie.
