@@ -18,7 +18,7 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - **Locale per dispositivo:** `shopMode` (Controllo a casa / Al mercato).
 - **Service worker:** file dell'app stale-while-revalidate, foto e font cache-first, `/api/` sempre in rete.
 - Ricette ancora nel codice (`R`, scritte per 2 e scalate ×1,25 all'avvio), valori nutrizionali in `NUT` (per 100 g) e `WT` (g per unità).
-- Online su https://ededona.es:8091: container su `127.0.0.1:8092`, nginx in Docker gestito con Ansible dal repo `infra` sulla Raspberry (`~/infra`, voce `cucinario` in `proxy_sites`).
+- Online su https://ededona.es:8092: container su `127.0.0.1:8091`, nginx in Docker gestito con Ansible dal repo `infra` sulla Raspberry (`~/infra`, voce `cucinario` in `proxy_sites`).
 - Deploy: `./deploy.sh` (git pull + `docker compose up -d --build`), anche da cron ogni 5 minuti.
 - Backup: cron interno di PocketBase, lunedì 3:00, ultimi 8 in `pb_data/backups/`.
 

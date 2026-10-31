@@ -6,8 +6,8 @@ services:
     restart: unless-stopped
     ports:
       # solo locale: da fuori si passa dal reverse proxy nginx (repo infra) che fa HTTPS.
-      # 8092: la 8090 è di ChirpStack e la 8091 è la porta pubblica di nginx per Cucinario.
-      - "127.0.0.1:8092:8090"
+      # 8091 locale; nginx la pubblica in HTTPS sulla porta successiva, 8092 (convenzione del repo infra).
+      - "127.0.0.1:8091:8090"
     volumes:
       # database SQLite, foto caricate e backup automatici
       - ./pb_data:/pb/pb_data

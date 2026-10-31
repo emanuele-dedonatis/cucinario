@@ -2,13 +2,13 @@
 
 App di famiglia per pianificare pranzi e cene della settimana, con obiettivi per fonte proteica, riempimento automatico, lista della spesa e bilanciamento dei pasti.
 
-- **Indirizzo:** https://ededona.es:8091
+- **Indirizzo:** https://ededona.es:8092
 - **Backend:** [PocketBase](https://pocketbase.io) v0.40.5 in un solo container (SQLite, login, sincronizzazione in tempo reale, foto, file statici).
 - **Frontend:** PWA in HTML/CSS/JS senza build (`pb_public/`), installabile sulla home di iPhone e Android, utilizzabile anche offline.
 
 ```
 Dockerfile             immagine: alpine + binario PocketBase (amd64 / arm64 / armv7)
-docker-compose.yml     servizio "cucinario" su 127.0.0.1:8092, dati in ./pb_data
+docker-compose.yml     servizio "cucinario" su 127.0.0.1:8091, dati in ./pb_data
 deploy.sh              git pull + rebuild, solo se ci sono novità (adatto a cron)
 pb_migrations/         schema del database (applicato in automatico all'avvio)
 pb_public/             l'app: index.html, app.css, app.js, sw.js, manifest, icone, SDK PocketBase
@@ -30,7 +30,7 @@ docker compose up -d --build
 docker compose exec cucinario /pb/pocketbase superuser upsert TUA@EMAIL.it 'una-password-lunga' --dir=/pb/pb_data
 ```
 
-La dashboard di amministrazione è su `https://ededona.es:8091/_/`.
+La dashboard di amministrazione è su `https://ededona.es:8092/_/`.
 
 ### 2. Utenti della famiglia
 
@@ -38,11 +38,11 @@ Dalla dashboard: **Collections → users → New record**, una volta per persona
 
 ### 3. Reverse proxy
 
-Il container ascolta in HTTP solo su `127.0.0.1:8092` (la 8090 è di ChirpStack, la 8091 è quella pubblica di nginx). HTTPS lo fa l'nginx della Raspberry, gestito con Ansible nel repo [infra](https://github.com/emanuele-dedonatis/infra): la voce `cucinario` in `group_vars/all/reverse_proxy.yml` pubblica `ededona.es` sulla porta 8091 (serve il port forwarding 8091 sul router). La sincronizzazione in tempo reale usa Server-Sent Events: per questo il proxy ha `proxy_buffering off` e un `read_timeout` lungo.
+Il container ascolta in HTTP solo su `127.0.0.1:8091` (la 8090 è di ChirpStack); nginx la pubblica sulla porta successiva. HTTPS lo fa l'nginx della Raspberry, gestito con Ansible nel repo [infra](https://github.com/emanuele-dedonatis/infra): la voce `cucinario` in `group_vars/all/reverse_proxy.yml` pubblica `ededona.es` sulla porta 8092 (serve il port forwarding 8092 sul router). La sincronizzazione in tempo reale usa Server-Sent Events: per questo il proxy ha `proxy_buffering off` e un `read_timeout` lungo.
 
 ### 4. Installare l'app sul telefono
 
-Apri `https://ededona.es:8091`, accedi, poi:
+Apri `https://ededona.es:8092`, accedi, poi:
 
 - **iPhone (Safari):** Condividi → *Aggiungi alla schermata Home*.
 - **Android (Chrome):** menu ⋮ → *Installa app*.
@@ -84,7 +84,7 @@ Senza Docker: scarica il binario di PocketBase per il tuo sistema da GitHub Rele
 
 L'app è su <http://127.0.0.1:8090>, la dashboard su <http://127.0.0.1:8090/_/>.
 
-Con Docker: `docker compose up --build`, poi <http://127.0.0.1:8092>.
+Con Docker: `docker compose up --build`, poi <http://127.0.0.1:8091>.
 
 ## Come funzionano i dati
 
