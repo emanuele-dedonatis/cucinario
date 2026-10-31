@@ -387,3 +387,10 @@ select.txt.changed{border-color:var(--today)}
 .rcard.draft{border-style:dashed;background:transparent}
 .rcard.draft .ph{opacity:.55}
 .dmiss{display:block;font-size:12px;color:var(--warn);font-weight:600}
+
+/* ingrediente verificato (valori controllati sull'etichetta) */
+.evals .verif{display:flex;flex-direction:row;align-items:center;gap:10px;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.verif input{width:22px;height:22px;accent-color:var(--ok);flex:none;margin:0}
+.verif b{display:block;font-size:14px;color:var(--fg)}
+.verif small{display:block;font-size:12px;color:var(--muted);font-weight:500}
+.verok{color:var(--ok);font-weight:700}

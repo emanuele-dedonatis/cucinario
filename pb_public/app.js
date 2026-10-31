@@ -252,7 +252,7 @@ function applyRec(col,r,del){
   else if(col==="settings"){if(!del){for(const f of ["ranges","times","schedule","people"])if(r[f])S[f]=r[f];if("country" in r)S.country=r.country||""}}
   else if(col==="photos"){if(del||!r.image){delete S.photos[r.recipe];delete S.credits[r.recipe]}else{S.photos[r.recipe]=pb.files.getURL(r,r.image);if(r.credit)S.credits[r.recipe]=r.credit;else delete S.credits[r.recipe]}}
   else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],links:r.links||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,draft:r.draft,archived:r.archived}}
-  else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,cats:r.cats||[],c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
+  else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,cats:r.cats||[],c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g,verified:!!r.verified}}
   else if(col==="categories"){if(del)delete S.cats[r.id];else S.cats[r.id]={name:r.name,order:r.order,goal:r.goal}}
   else if(col==="types"){if(del)delete S.types[r.id];else S.types[r.id]={name:r.name,order:r.order}}
 }
@@ -800,7 +800,8 @@ async function offFind(box,t,mode,arg){
   let off;try{off=await offSearch(arg)}
   catch(err){return draw([],navigator.onLine&&err.status?"Open Food Facts non risponde: riprova tra poco.":"Per i prodotti di Open Food Facts serve la connessione.")}
   draw(off,gen.length||off.length?"":`Nessun alimento con i valori per «${esc(arg)}». Prova un nome più semplice o il codice a barre, oppure scrivili a mano.`)}
-function offApply(box,t,x){Object.assign(t.v,{c:x.c,p:x.p,f:x.f,fib:x.fib??(+t.v.fib||0)});
+function offApply(box,t,x){Object.assign(t.v,{c:x.c,p:x.p,f:x.f,fib:x.fib??(+t.v.fib||0),verified:false}); // valori nuovi: da controllare di nuovo
+  const ver=box.closest(".evals").querySelector("[data-ver]");if(ver)ver.checked=false;
   if(x.unit_g&&!(+t.v.unit_g))t.v.unit_g=x.unit_g; // peso tipico di un pezzo (uovo, spicchio…), solo se non c'è già
   box.closest(".evals").querySelectorAll("input[data-v]").forEach(inp=>{if(["c","p","f","fib","unit_g"].includes(inp.dataset.v))inp.value=t.v[inp.dataset.v]||""});
   box.innerHTML=`<p class="offmsg ok">✓ Valori ${x.ciq?"dalla tabella CIQUAL":"da Open Food Facts"}: ${esc(x.name)}${x.brand&&x.brand!==x.name?` (${esc(x.brand)})`:""}${x.fib==null?" · fibre non indicate, controllale":""}</p>`;
@@ -837,9 +838,10 @@ function ingFieldsHtml(v,a){a=a||"";const has=new Set(v.cats||[]);
     :`<small>Nessuna categoria: si creano da Impostazioni → Obiettivi settimanali.</small>`}</div></div>
     <div class="wide offbar"><button type="button" class="btn ghost" ${a} data-off="search">🔍 Cerca i valori</button><label class="btn ghost filebtn">▦ Codice a barre<input type="file" accept="image/*" capture="environment" ${a} data-offscan></label></div>
     <div class="wide offres" ${a} data-offres></div>
-    ${NUTF.map(([k,l])=>num(k,l+" (g)")).join("")}${num("unit_g","Peso di 1 unità in grammi (pz, mazzo, spicchio…)","—","wide")}`}
-const ingData=(name,v)=>({name,cats:CAT.filter(c=>(v.cats||[]).includes(c.id)).map(c=>c.id),c:+v.c||0,p:+v.p||0,f:+v.f||0,fib:+v.fib||0,unit_g:+v.unit_g||0});
-const sameIng=(a,b)=>a&&b&&a.name===b.name&&JSON.stringify(ingCats(a))===JSON.stringify(b.cats)&&INGF.every(k=>(a[k]||0)===(b[k]||0));
+    ${NUTF.map(([k,l])=>num(k,l+" (g)")).join("")}${num("unit_g","Peso di 1 unità in grammi (pz, mazzo, spicchio…)","—","wide")}
+    <label class="wide verif"><input type="checkbox" ${a} data-ver${v.verified?" checked":""}><span><b>Verificato</b><small>valori controllati sull'etichetta di quello che compro</small></span></label>`}
+const ingData=(name,v)=>({name,cats:CAT.filter(c=>(v.cats||[]).includes(c.id)).map(c=>c.id),c:+v.c||0,p:+v.p||0,f:+v.f||0,fib:+v.fib||0,unit_g:+v.unit_g||0,verified:!!v.verified});
+const sameIng=(a,b)=>a&&b&&a.name===b.name&&JSON.stringify(ingCats(a))===JSON.stringify(b.cats)&&INGF.every(k=>(a[k]||0)===(b[k]||0))&&!!a.verified===!!b.verified;
 const toggleCat=(v,id)=>{const s=new Set(v.cats||[]);s.has(id)?s.delete(id):s.add(id);v.cats=[...s]};
 // id deterministico dal nome; se è già preso (ingrediente rinominato) ne uso uno casuale
 const newIngId=n=>{const id=ID.ingredients(n);return S.ingr[id]?randId():id};
@@ -858,7 +860,7 @@ function openEditor(id,back){
     if(!ING[n]&&offEmpty(v))return["warn","Nuovo ingrediente: scegli o scrivi i valori qui sotto"];
     if(!(x.u==="g"||x.u==="ml")&&!v.unit_g)return["warn",`Quanto pesa 1 ${x.u}? Tocca qui`];
     const cs=ingCats(v).map(cname).join(", ");
-    return["",`${cs?cs+" · ":""}per 100 g: carb ${num(v.c)} · prot ${num(v.p)} · grassi ${num(v.f)} · fibre ${num(v.fib)}`]};
+    return["",`${v.verified?"✓ verificato · ":""}${cs?cs+" · ":""}per 100 g: carb ${num(v.c)} · prot ${num(v.p)} · grassi ${num(v.f)} · fibre ${num(v.fib)}`]};
   const valsHtml=i=>{const n=canon(d.rows[i].n),v=d.ing[n];
     return `<div class="evals"><p>${ING[n]?`Valori di <b>${esc(n)}</b> nel catalogo: cambiano per tutte le ricette che lo usano.`:`<b>${esc(n)}</b> non è ancora nel catalogo. Valori per 100 g, come sull'etichetta.`}</p>
       ${ingFieldsHtml(v,`data-i="${i}"`)}</div>`};
@@ -917,6 +919,7 @@ function openEditor(id,back){
   body.oninput=e=>{const t=e.target,i=+t.dataset.i;
     if(t.id==="edName")d.n=t.value;else if(t.id==="edSteps")d.s=t.value;else if(t.id==="edLinks")d.l=t.value;
     else if(t.dataset.f)d.rows[i][t.dataset.f]=t.value;
+    else if("ver" in t.dataset){const n=canon(d.rows[i].n);d.ing[n].verified=t.checked}
     else if(t.dataset.v){const n=canon(d.rows[i].n);d.ing[n][t.dataset.v]=t.value}
     refresh()};
   // valori da Open Food Facts per la riga aperta; per un ingrediente nuovo e ancora vuoto la ricerca parte da sola
@@ -945,7 +948,7 @@ function renderIng(){
   const list=all.filter(x=>(!q||x.name.toLowerCase().includes(q))&&(!ingFilter||(x.cats||[]).includes(ingFilter))).sort((a,b)=>a.name.localeCompare(b.name,"it"));
   $("#ingCat").innerHTML=!all.length?`<p class="empty-note">Nessun ingrediente.<br>Aggiungilo con «Nuovo».</p>`:!list.length?`<p class="empty-note">Nessun ingrediente${q?` con «${esc(ingQuery.trim())}»`:""}${ingFilter?` nella categoria ${esc(cname(ingFilter).toLowerCase())}`:""}.</p>`:
     `<div class="items">${list.map(x=>{const n=activeUses(x.name).length;return `<button class="item" data-ing="${x.id}"><span class="iname"><b>${esc(x.name)}</b>
-      <small>${n?`in ${n} ${n===1?"ricetta":"ricette"}`:"non usato"} · ${Math.round((x.c||0)*4+(x.p||0)*4+(x.f||0)*9)} kcal per 100 g</small></span><span class="itags">${tagsHtml(ingCats(x))}</span></button>`}).join("")}</div>`;
+      <small>${x.verified?`<span class="verok">✓ verificato</span> · `:""}${n?`in ${n} ${n===1?"ricetta":"ricette"}`:"non usato"} · ${Math.round((x.c||0)*4+(x.p||0)*4+(x.f||0)*9)} kcal per 100 g</small></span><span class="itags">${tagsHtml(ingCats(x))}</span></button>`}).join("")}</div>`;
 }
 function openIngredient(id){
   const old=id?S.ingr[id]:null,v=old?{...old,cats:ingCats(old)}:{name:ingQuery.trim(),cats:ingFilter?[ingFilter]:[]};
@@ -962,7 +965,7 @@ function openIngredient(id){
   if(!old)setTimeout(()=>($("#igName")||{focus(){}}).focus(),260);
   const fail=msg=>{const el=$("#igErr");el.textContent=msg;el.hidden=false;el.scrollIntoView({block:"center",behavior:"smooth"})};
   const body=$("#sheetBody");
-  body.oninput=e=>{const t=e.target;if(t.id==="igName")v.name=t.value;else if(t.dataset.v)v[t.dataset.v]=t.value};
+  body.oninput=e=>{const t=e.target;if(t.id==="igName")v.name=t.value;else if("ver" in t.dataset)v.verified=t.checked;else if(t.dataset.v)v[t.dataset.v]=t.value};
   // valori da Open Food Facts: per un ingrediente nuovo la ricerca parte appena c'è il nome
   const tgt=()=>({v,q:v.name}),autoOff=()=>{const box=body.querySelector("[data-offres]");if(!old&&v.name.trim()&&offEmpty(v)&&box)offFind(box,tgt(),"search",v.name)};
   body.onchange=e=>{if(offFile(e,tgt))return;if(e.target.id==="igName")autoOff()};
