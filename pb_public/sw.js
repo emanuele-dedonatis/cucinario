@@ -2,9 +2,9 @@
    - file dell'app: risposta dalla cache, aggiornata in background (il nuovo deploy si vede alla riapertura successiva)
    - foto delle ricette e font: cache al primo uso
    - API di PocketBase: sempre dalla rete (la coda offline la gestisce app.js) */
-const SHELL = "cucinario-shell-v2", RUNTIME = "cucinario-runtime-v1";
+const SHELL = "cucinario-shell-v3", RUNTIME = "cucinario-runtime-v1";
 // niente "index.html": PocketBase lo redirige a "./" e una risposta rediretta non si può usare per aprire la pagina
-const FILES = ["./", "app.css", "app.js", "manifest.json", "vendor/pocketbase.umd.js",
+const FILES = ["./", "app.css", "app.js", "manifest.json", "vendor/pocketbase.umd.js", "ciqual.json",
   "icons/icon.svg", "icons/icon-192.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {

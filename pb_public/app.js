@@ -196,7 +196,7 @@ function hash36(s){let a=0xdeadbeef,b=0x41c6ce57;for(const c of s){const x=c.cha
 const ID={plan:k=>pad15("p"+k),shopping:w=>pad15("w"+w),settings:()=>"settings0000000",photos:r=>pad15("ph"+hash36(r)),ingredients:n=>pad15("i"+hash36(n))};
 const SHOP0=()=>({checks:{},have:{},extra:[],done:{}});
 const defaults=()=>({plan:{},shop:SHOP0(),photos:{},credits:{},recipes:{},ingr:{},cats:{},types:{},shopMode:"casa",schedule:DEF_SCHED,
-  ranges:{c:[45,60],p:[15,25],f:[20,35],fib:8},times:{pranzo:"18:00",cena:"23:00"},people:{a:2,b:1,kid:60}});
+  ranges:{c:[45,60],p:[15,25],f:[20,35],fib:8},times:{pranzo:"18:00",cena:"23:00"},people:{a:2,b:1,kid:60},country:""});
 let S=defaults(),outbox=[],netOk=true;
 try{S=Object.assign(defaults(),JSON.parse(localStorage.getItem(CACHE))||{})}catch(e){}
 try{outbox=JSON.parse(localStorage.getItem(OUTBOX))||[]}catch(e){}
@@ -234,7 +234,7 @@ async function flush(){
 function applyRec(col,r,del){
   if(col==="plan"){if(del)delete S.plan[r.date];else S.plan[r.date]={pranzo:r.pranzo??null,cena:r.cena??null,kinds:r.kinds||{},people:r.people||{}}}
   else if(col==="shopping"){if(r.week==="lista")S.shop=del?SHOP0():{checks:r.checks||{},have:r.have||{},extra:r.extra||[],done:r.done||{}}} // i vecchi record per settimana non servono più
-  else if(col==="settings"){if(!del)for(const f of ["ranges","times","schedule","people"])if(r[f])S[f]=r[f]}
+  else if(col==="settings"){if(!del){for(const f of ["ranges","times","schedule","people"])if(r[f])S[f]=r[f];if("country" in r)S.country=r.country||""}}
   else if(col==="photos"){if(del||!r.image){delete S.photos[r.recipe];delete S.credits[r.recipe]}else{S.photos[r.recipe]=pb.files.getURL(r,r.image);if(r.credit)S.credits[r.recipe]=r.credit;else delete S.credits[r.recipe]}}
   else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,archived:r.archived}}
   else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,cats:r.cats||[],c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
@@ -415,6 +415,14 @@ function openPeople(){
     if(b.dataset.pp){[P.a,P.b]=pplStep([P.a,P.b],b)}else if(b.dataset.kid)P.kid=Math.max(10,Math.min(100,P.kid+ +b.dataset.kid));else return;
     save();queueSettings("people");draw();renderAll()};
 }
+// paesi in cui il server sa filtrare Open Food Facts (vedi LANG in pb_hooks/off.pb.js)
+const COUNTRIES=[["en:spain","Spagna"],["en:italy","Italia"],["en:france","Francia"],["en:portugal","Portogallo"],["en:germany","Germania"],["en:switzerland","Svizzera"],["en:united-kingdom","Regno Unito"]];
+function openCountry(){
+  const draw=()=>{$("#sheetBody").innerHTML=`<p style="margin:0 0 10px;color:var(--muted);font-size:13.5px">Cercando i valori di un ingrediente, i prodotti di Open Food Facts venduti in questo paese vengono per primi. Scrivi pure in italiano: «ceci» trova i garbanzos in Spagna.</p>
+    <div class="choice">${[...COUNTRIES,["","Tutti i paesi"]].map(([id,n])=>`<button data-country="${id}" aria-pressed="${(S.country||"")===id}"><b>${n}</b></button>`).join("")}</div>`};
+  openSheet("Paese della spesa","");draw();
+  $("#sheetBody").onclick=e=>{const b=e.target.closest("[data-country]");if(!b)return;S.country=b.dataset.country;save();queueSettings("country");draw();renderSettings()};
+}
 function openTypes(){
   const draw=()=>{$("#sheetBody").innerHTML=`<h3 class="shh" style="margin-top:0">Tipi</h3>
     <p style="margin:0 0 8px;color:var(--muted);font-size:13.5px">Ogni ricetta ha uno o più tipi; ogni pasto della settimana ne ha uno e «Riempi» usa solo ricette di quel tipo. Tocca un tipo per rinominarlo o eliminarlo.</p>
@@ -462,10 +470,11 @@ function renderSettings(){
    <button class="setitem" data-s="ranges"><span><b>Pasto bilanciato</b><small>Carboidrati ${r.c[0]}–${r.c[1]}% · Proteine ${r.p[0]}–${r.p[1]}% · Grassi ${r.f[0]}–${r.f[1]}% · Fibre ≥${r.fib} g</small></span></button>
    <button class="setitem" data-s="types"><span><b>Pasti e tipi</b><small>${TYP.length?"Tipi: "+esc(TYP.map(t=>t.name).join(", "))+" · settimana tipo":"Nessun tipo"}</small></span></button>
    <button class="setitem" data-s="people"><span><b>Persone e porzioni</b><small>Di solito ${esc(pplLbl([S.people.a,S.people.b]))} · un bambino mangia il ${S.people.kid}% di un adulto</small></span></button>
+   <button class="setitem" data-s="country"><span><b>Paese della spesa</b><small>${S.country?`Valori dei prodotti: prima quelli venduti in ${esc((COUNTRIES.find(c=>c[0]===S.country)||["",S.country])[1])}`:"Valori dei prodotti: tutti i paesi"}</small></span></button>
    <button class="setitem" data-s="times"><span><b>Orari dei pasti</b><small>Il pranzo passa alle ${S.times.pranzo}, la cena alle ${S.times.cena}</small></span></button>
    <button class="setitem" data-s="account"><span><b>Account</b><small>${esc(pb.authStore.record?.email||"")}</small></span></button>`;
 }
-$("#setList").addEventListener("click",e=>{const b=e.target.closest("[data-s]");if(!b)return;({goals:openGoals,ranges:()=>openRanges(),types:openTypes,people:openPeople,times:openTimes,account:openAccount})[b.dataset.s]()});
+$("#setList").addEventListener("click",e=>{const b=e.target.closest("[data-s]");if(!b)return;({goals:openGoals,ranges:()=>openRanges(),types:openTypes,people:openPeople,country:openCountry,times:openTimes,account:openAccount})[b.dataset.s]()});
 $("#closeSheet").addEventListener("click",()=>renderSettings());$("#scrim").addEventListener("click",()=>renderSettings());
 function scrollToToday(smooth){
   const el=document.querySelector(".day.is-today");
@@ -706,13 +715,27 @@ const OFF_F="code,product_name,product_name_it,brands,nutriments";
 const n100=(n,k)=>{const x=n[k+"_100g"];return x==null||x===""||isNaN(+x)?null:Math.round(+x*10)/10};
 function offItem(p){const n=(p&&p.nutriments)||{},c=n100(n,"carbohydrates"),pr=n100(n,"proteins"),f=n100(n,"fat");
   if(c==null||pr==null||f==null||c+pr+f===0)return null; // senza valori o tutti a zero: dato incompleto
-  return{name:String(p.product_name_it||p.product_name||"").trim()||"Senza nome",brand:String((Array.isArray(p.brands)?p.brands[0]:String(p.brands||"").split(",")[0])||"").trim(),c,p:pr,f,fib:n100(n,"fiber")}}
-// le chiamate passano dal nostro server (pb_hooks/off.pb.js): il motore di ricerca di OFF non accetta chiamate dal browser
-// prima i prodotti col nome uguale alla ricerca, poi quelli che iniziano così, poi gli altri; a parità, i nomi più brevi
-// (più vicini al prodotto semplice) e poi l'ordine di Open Food Facts
-async function offSearch(q){const d=await pb.send("/api/cucinario/off/search",{query:{q}});
-  const k=q.toLowerCase(),rank=x=>{const n=x.name.toLowerCase();return n===k?0:n.startsWith(k)?1:n.includes(k)?2:3};
-  return(d.products||[]).map(offItem).filter(Boolean).map((x,i)=>({x,i,r:rank(x),w:x.name.split(/\s+/).length})).sort((a,b)=>a.r-b.r||a.w-b.w||a.i-b.i).slice(0,8).map(o=>o.x)}
+  return{grp:p.grp||0,name:String(p.name||p.product_name_it||p.product_name_es||p.product_name||"").trim()||"Senza nome",brand:String((Array.isArray(p.brands)?p.brands[0]:String(p.brands||"").split(",")[0])||"").trim(),c,p:pr,f,fib:n100(n,"fiber")}}
+// le chiamate passano dal nostro server (pb_hooks/off.pb.js): il motore di ricerca di OFF non accetta chiamate dal browser.
+// Col paese impostato il server dà prima i prodotti della categoria venduti lì (grp 0), poi quelli venduti lì che hanno
+// quelle parole (1), poi gli altri (2). Dentro ogni gruppo: nome uguale alla ricerca, che inizia così, che la contiene,
+// gli altri; a parità i nomi più brevi (più vicini al prodotto semplice) e poi l'ordine di Open Food Facts.
+async function offSearch(q){const d=await pb.send("/api/cucinario/off/search",{query:{q,country:S.country||""}});
+  const k=fold(q),rank=x=>{const n=fold(x.name);return n===k?0:n.startsWith(k)?1:n.includes(k)?2:3};
+  const res=(d.products||[]).map(offItem).filter(Boolean).map((x,i)=>({x,i,r:rank(x),w:x.name.split(/\s+/).length})).sort((a,b)=>a.x.grp-b.x.grp||a.r-b.r||a.w-b.w||a.i-b.i).slice(0,8).map(o=>o.x);
+  res.category=d.category;return res}
+/* Tabella CIQUAL (Anses, Licence Ouverte): circa 300 alimenti generici crudi e cotti, con i nomi in italiano
+   (ciqual.json, letto al primo uso e poi in cache: funziona anche senza rete). Per verdura, carne e pesce freschi
+   Open Food Facts ha poco: lì ci sono soprattutto prodotti confezionati. */
+const fold=s=>String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9 ]+/g," ").trim().replace(/\s+/g," ");
+const stem=w=>w.length>3?w.replace(/[aeio]$/,""):w; // zucchina, zucchine → zucchin
+let CIQ=null;
+async function ciqSearch(q){
+  if(!CIQ){const d=await (await fetch("ciqual.json")).json();CIQ=d.alimenti.map(([n,c,p,f,fib,unit_g])=>({name:n,c,p,f,fib,unit_g,ciq:true,w:fold(n).split(" ").map(stem)}))}
+  const qw=fold(q).split(" ").filter(Boolean).map(stem);if(!qw.length)return[];
+  // tutte le parole cercate devono essere all'inizio di una parola del nome; prima chi comincia con la prima parola
+  return CIQ.filter(x=>qw.every(w=>x.w.some(y=>y.startsWith(w)))).map(x=>({x,r:x.w[0].startsWith(qw[0])?0:1}))
+    .sort((a,b)=>a.r-b.r||a.x.name.length-b.x.name.length).slice(0,6).map(o=>o.x)}
 async function offBarcode(code){try{return offItem((await pb.send("/api/cucinario/off/product/"+encodeURIComponent(code),{})).product)}catch(err){if(err.status===404||err.status===400)return null;throw err}}
 // codice a barre da una foto: BarcodeDetector dove c'è (Chrome su Android), altrimenti ZXing (vendor/zxing.min.js, caricato al primo uso)
 async function readBarcode(file){
@@ -728,18 +751,28 @@ async function readBarcode(file){
 async function offFind(box,t,mode,arg){
   arg=String(arg||"").trim();
   if(!arg){box.innerHTML=`<p class="offmsg">Scrivi prima il nome dell'ingrediente.</p>`;return}
-  box.innerHTML=`<p class="offmsg">${mode==="search"?`Cerco «${esc(arg)}» su Open Food Facts…`:`Cerco il codice ${esc(arg)}…`}</p>`;
-  let res;try{res=mode==="search"?await offSearch(arg):[await offBarcode(arg)].filter(Boolean)}
-  catch(err){if(box.isConnected)box.innerHTML=`<p class="offmsg warn">${navigator.onLine&&err.status?"Open Food Facts non risponde: riprova tra poco.":"Serve la connessione a internet."}</p>`;return}
-  if(!box.isConnected)return;
-  box._res=res;
-  if(mode==="code"&&res.length)return offApply(box,t,res[0]); // il codice a barre è già il prodotto giusto
-  box.innerHTML=res.length?`<p class="offmsg">Tocca il prodotto più simile per usare i suoi valori (per 100 g):</p><div class="offlist">${res.map((x,i)=>`<button type="button" data-offpick="${i}"><b>${esc(x.name)}</b>${x.brand&&x.brand!==x.name?` <small>${esc(x.brand)}</small>`:""}<span>carb ${num(x.c)} · prot ${num(x.p)} · grassi ${num(x.f)} · fibre ${x.fib==null?"—":num(x.fib)}</span></button>`).join("")}</div>`
-    :mode==="search"?`<p class="offmsg warn">Nessun prodotto con i valori per «${esc(arg)}». Prova un nome più semplice o il codice a barre, oppure scrivili a mano.</p>`
-    :`<p class="offmsg warn">Il codice ${esc(arg)} non è in Open Food Facts (o non ha i valori): scrivili a mano.</p>`}
+  const row=(x,i)=>`<button type="button" data-offpick="${i}"><b>${esc(x.name)}</b>${x.brand&&x.brand!==x.name?` <small>${esc(x.brand)}</small>`:""}<span>carb ${num(x.c)} · prot ${num(x.p)} · grassi ${num(x.f)} · fibre ${x.fib==null?"—":num(x.fib)}</span></button>`;
+  if(mode==="code"){box.innerHTML=`<p class="offmsg">Cerco il codice ${esc(arg)}…</p>`;let x;
+    try{x=await offBarcode(arg)}catch(err){if(box.isConnected)box.innerHTML=`<p class="offmsg warn">${navigator.onLine&&err.status?"Open Food Facts non risponde: riprova tra poco.":"Serve la connessione a internet."}</p>`;return}
+    if(!box.isConnected)return;
+    if(x){box._res=[x];return offApply(box,t,x)} // il codice a barre è già il prodotto giusto
+    box.innerHTML=`<p class="offmsg warn">Il codice ${esc(arg)} non è in Open Food Facts (o non ha i valori): scrivili a mano.</p>`;return}
+  // prima gli alimenti generici della tabella (subito, anche offline), poi i prodotti di Open Food Facts
+  let gen=[];try{gen=await ciqSearch(arg)}catch(err){}
+  const where=S.country?COUNTRIES.find(c=>c[0]===S.country):null;
+  const draw=(off,msg)=>{if(!box.isConnected)return;box._res=[...gen,...(off||[])];
+    box.innerHTML=(gen.length||(off&&off.length)?`<p class="offmsg">Tocca l'alimento più simile per usare i suoi valori (per 100 g):</p>`:"")+
+      (gen.length?`<h4 class="offh">Alimenti generici <small>tabella CIQUAL</small></h4><div class="offlist">${gen.map(row).join("")}</div>`:"")+
+      (off&&off.length?`<h4 class="offh">Prodotti <small>Open Food Facts${where?` · ${esc(where[1].toLowerCase())}`:""}${off.category?` · ${esc(off.category.toLowerCase())}`:""}</small></h4><div class="offlist">${off.map((x,i)=>row(x,gen.length+i)).join("")}</div>`:"")+
+      (msg?`<p class="offmsg${off===null?"":" warn"}">${msg}</p>`:"")};
+  draw(null,`Cerco «${esc(arg)}» su Open Food Facts…`);
+  let off;try{off=await offSearch(arg)}
+  catch(err){return draw([],navigator.onLine&&err.status?"Open Food Facts non risponde: riprova tra poco.":"Per i prodotti di Open Food Facts serve la connessione.")}
+  draw(off,gen.length||off.length?"":`Nessun alimento con i valori per «${esc(arg)}». Prova un nome più semplice o il codice a barre, oppure scrivili a mano.`)}
 function offApply(box,t,x){Object.assign(t.v,{c:x.c,p:x.p,f:x.f,fib:x.fib??(+t.v.fib||0)});
-  box.closest(".evals").querySelectorAll("input[data-v]").forEach(inp=>{if(["c","p","f","fib"].includes(inp.dataset.v))inp.value=t.v[inp.dataset.v]||""});
-  box.innerHTML=`<p class="offmsg ok">✓ Valori da Open Food Facts: ${esc(x.name)}${x.brand&&x.brand!==x.name?` (${esc(x.brand)})`:""}${x.fib==null?" · fibre non indicate, controllale":""}</p>`;
+  if(x.unit_g&&!(+t.v.unit_g))t.v.unit_g=x.unit_g; // peso tipico di un pezzo (uovo, spicchio…), solo se non c'è già
+  box.closest(".evals").querySelectorAll("input[data-v]").forEach(inp=>{if(["c","p","f","fib","unit_g"].includes(inp.dataset.v))inp.value=t.v[inp.dataset.v]||""});
+  box.innerHTML=`<p class="offmsg ok">✓ Valori ${x.ciq?"dalla tabella CIQUAL":"da Open Food Facts"}: ${esc(x.name)}${x.brand&&x.brand!==x.name?` (${esc(x.brand)})`:""}${x.fib==null?" · fibre non indicate, controllale":""}</p>`;
   if(t.after)t.after()}
 // gestori comuni a catalogo ed editor; tgt(box) → {v, q: nome da cercare, after}
 function offClick(e,tgt){const b=e.target.closest("[data-off],[data-offpick]");if(!b)return false;
