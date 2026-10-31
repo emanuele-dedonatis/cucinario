@@ -90,12 +90,13 @@ Con Docker: `docker compose up --build`, poi <http://127.0.0.1:8091>.
 
 | Collezione | Contenuto | Id del record |
 |---|---|---|
-| `plan` | un giorno: `date`, `pranzo`, `cena` (id ricetta, `{"o":"nota"}` se fuori casa, oppure `null`) | `p` + data, es. `p20261031000000` |
+| `plan` | un giorno: `date`, `pranzo`, `cena` (id ricetta, `{"o":"nota"}` se fuori casa, oppure `null`), `kinds` (tipo cambiato solo per quel giorno) | `p` + data, es. `p20261031000000` |
 | `shopping` | una settimana: `week` (lunedì), `checks` (spunte), `have` (già a casa) | `w` + data del lunedì |
-| `settings` | `ranges`, `times` | `settings0000000` |
+| `settings` | `ranges`, `times`, `schedule` (settimana tipo) | `settings0000000` |
 | `photos` | `recipe`, `image` | `ph` + hash dell'id ricetta |
-| `recipes` | `name`, `ingredients` (`[[nome, quantità, unità]]`, olio compreso), `steps`, `vis`, `archived` | casuale; le 17 di esempio `r` + vecchio id |
+| `recipes` | `name`, `meals` (pranzo/cena), `types` (id dei tipi), `ingredients` (`[[nome, quantità, unità]]`, olio compreso), `steps`, `vis`, `archived` | casuale; le 17 di esempio `r` + vecchio id |
 | `ingredients` | `name`, `cats` (id delle categorie), `c`/`p`/`f`/`fib` per 100 g, `unit_g` | `i` + hash del nome |
+| `types` | `name`, `order` (tipi delle ricette: all'inizio Feriale e Festivo) | casuale; iniziali `t` + nome |
 | `categories` | `name`, `color` (0–9), `order`, `goal` (`{min, max}` a settimana) | casuale; le 7 iniziali `k` + nome |
 
 Gli id sono deterministici, così ogni telefono sa quale record aggiornare anche se è stato creato dall'altro. Ogni modifica finisce in una coda locale (`localStorage`) e parte appena c'è rete; il server rimanda le modifiche all'altro telefono in tempo reale. Se due modifiche toccano lo stesso campo, vince l'ultima.

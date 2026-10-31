@@ -12,6 +12,27 @@ const ingCats=x=>((x&&x.cats)||[]).filter(id=>catById[id]);
 // rows = [[nome, quantità, unità]]; look(nome) → ingrediente. Categorie nell'ordine della lista
 function recipeCats(rows,look){look=look||(n=>ING[n]);const s=new Set();for(const [n] of rows)for(const id of ingCats(look(n)))s.add(id);return CAT.filter(c=>s.has(c.id)).map(c=>c.id)}
 
+/* ---------- Pasto e tipo ----------
+   Ogni ricetta è adatta a pranzo e/o cena (meals: fisso, almeno uno) e a uno o più tipi (types: collezione types,
+   personalizzabile; all'inizio Feriale e Festivo). La settimana tipo (settings.schedule: {pranzo:[7], cena:[7]} da lunedì
+   a domenica, null = qualsiasi) dice il tipo di ogni pasto; un giorno può cambiarlo (plan.kinds, es. festivo infrasettimanale).
+   "Riempi" usa solo le ricette adatte al pasto e al suo tipo. */
+const MEALS=["pranzo","cena"];
+let TYP=[],typById={};
+function rebuildTypes(){TYP=Object.keys(S.types).map(id=>({...S.types[id],id})).sort((a,b)=>(a.order||0)-(b.order||0)||a.name.localeCompare(b.name,"it"));typById=Object.fromEntries(TYP.map(t=>[t.id,t]))}
+const tname=id=>typById[id]?typById[id].name:"";
+const FE="tferiale0000000",FS="tfestivo0000000";
+const DEF_SCHED={pranzo:[FE,FE,FE,FE,FE,FS,FS],cena:[FE,FE,FE,FE,FS,FS,FS]};
+const dayIdx=k=>(new Date(k+"T12:00").getDay()+6)%7;
+const schedOf=(k,m)=>{const v=((S.schedule||DEF_SCHED)[m]||[])[dayIdx(k)];return typById[v]?v:null};
+const kindChanged=(k,m)=>{const o=(S.plan[k]||{}).kinds;return!!o&&m in o};
+// tipo del pasto: quello cambiato per quel giorno, se c'è, altrimenti quello della settimana tipo; null = qualsiasi
+const kindOf=(k,m)=>{if(kindChanged(k,m)){const v=S.plan[k].kinds[m];return typById[v]?v:null}return schedOf(k,m)};
+// una ricetta senza tipi (es. dopo aver eliminato il suo unico tipo) va bene per tutti
+const fits=(r,k,m)=>{const t=kindOf(k,m);return r.meals.includes(m)&&(!t||!r.ty.length||r.ty.includes(t))};
+const mealsLbl=ms=>ms.length===2?"Pranzo e cena":ms[0]==="pranzo"?"Solo pranzo":"Solo cena";
+const recMeta=r=>[mealsLbl(r.meals),r.ty.map(tname).join(", ")].filter(Boolean).join(" · ");
+
 /* ---------- Ricette e ingredienti (collezioni recipes e ingredients sul server) ----------
    Dentro l'app una ricetta è {id, n:nome, k:[categorie], i:[[ingrediente, quantità, unità]], s:[passi], v, archived},
    con le quantità già per 2 adulti + 1 bambina (2,5 porzioni); l'olio è un ingrediente come gli altri.
@@ -21,11 +42,12 @@ const SERV=2.5,SERV_LBL="per 2 adulti e 1 bambina";
 let R=[],byId={},ING={}; // R = ricette attive (elenco, selettore, riempimento); byId comprende anche quelle eliminate; ING = catalogo per nome
 const grams=(q,u,x)=>(u==="g"||u==="ml")?q:q*((x&&x.unit_g)||100);
 function rebuildRecipes(){
-  rebuildCats();
+  rebuildCats();rebuildTypes();
   ING={};for(const id in S.ingr)ING[S.ingr[id].name]={...S.ingr[id],id};
   byId={};
   for(const id in S.recipes){const x=S.recipes[id],rows=x.ingredients||[];
-    byId[id]={id,n:x.name||"",k:recipeCats(rows),v:x.vis||null,s:x.steps||[],archived:!!x.archived,i:rows.map(([n,q,u])=>[n,q,u])}}
+    const meals=MEALS.filter(m=>(x.meals||MEALS).includes(m));
+    byId[id]={id,n:x.name||"",k:recipeCats(rows),meals:meals.length?meals:MEALS,ty:TYP.filter(t=>(x.types||[]).includes(t.id)).map(t=>t.id),v:x.vis||null,s:x.steps||[],archived:!!x.archived,i:rows.map(([n,q,u])=>[n,q,u])}}
   // pasti salvati quando le ricette stavano nel codice: "ceci" ora è il record "rceci0000000000"
   for(const id in S.recipes){const old=/^r([a-z]+)0*$/.exec(id);if(old&&!byId[old[1]])byId[old[1]]=byId[id]}
   R=Object.keys(S.recipes).map(id=>byId[id]).filter(r=>!r.archived).sort((a,b)=>a.n.localeCompare(b.n,"it"));
@@ -162,8 +184,8 @@ let today=new Date(),thisMonday=mondayOf(today);
    Collezioni sul server: plan (un record per giorno), shopping (uno per settimana: spunte e "a casa"),
    settings (unico record: obiettivi, intervalli, orari), photos (una foto per ricetta), recipes, ingredients.
    Le modifiche vanno in una coda locale (outbox) e partono appena c'è rete; vince l'ultima scrittura per campo. */
-const CACHE="cucinario-stato-v1",OUTBOX="cucinario-outbox-v1",COLS=["plan","shopping","settings","photos","recipes","ingredients","categories"];
-const JSONF=new Set(["pranzo","cena","checks","have","ranges","times","ingredients","steps","vis","cats","goal"]);
+const CACHE="cucinario-stato-v1",OUTBOX="cucinario-outbox-v1",COLS=["plan","shopping","settings","photos","recipes","ingredients","categories","types"];
+const JSONF=new Set(["pranzo","cena","checks","have","ranges","times","ingredients","steps","vis","cats","goal","meals","types","kinds","schedule"]);
 const pb=new PocketBase(location.origin);pb.autoCancellation(false);
 // id dei record deterministici (15 caratteri a-z0-9), così ogni dispositivo sa quale record aggiornare
 const pad15=s=>(s.replace(/[^a-z0-9]/g,"")+"0".repeat(15)).slice(0,15);
@@ -171,7 +193,7 @@ function hash36(s){let a=0xdeadbeef,b=0x41c6ce57;for(const c of s){const x=c.cha
   a=Math.imul(a^a>>>16,2246822507)^Math.imul(b^b>>>13,3266489909);b=Math.imul(b^b>>>16,2246822507)^Math.imul(a^a>>>13,3266489909);
   return((b>>>0).toString(36)+(a>>>0).toString(36))}
 const ID={plan:k=>pad15("p"+k),shopping:w=>pad15("w"+w),settings:()=>"settings0000000",photos:r=>pad15("ph"+hash36(r)),ingredients:n=>pad15("i"+hash36(n))};
-const defaults=()=>({plan:{},checks:{},have:{},photos:{},recipes:{},ingr:{},cats:{},shopMode:"casa",
+const defaults=()=>({plan:{},checks:{},have:{},photos:{},recipes:{},ingr:{},cats:{},types:{},shopMode:"casa",schedule:DEF_SCHED,
   ranges:{c:[45,60],p:[15,25],f:[20,35],fib:8},times:{pranzo:"18:00",cena:"23:00"}});
 let S=defaults(),outbox=[],netOk=true;
 try{S=Object.assign(defaults(),JSON.parse(localStorage.getItem(CACHE))||{})}catch(e){}
@@ -207,27 +229,29 @@ async function flush(){
 }
 // record del server → stato locale
 function applyRec(col,r,del){
-  if(col==="plan"){if(del)delete S.plan[r.date];else S.plan[r.date]={pranzo:r.pranzo??null,cena:r.cena??null}}
+  if(col==="plan"){if(del)delete S.plan[r.date];else S.plan[r.date]={pranzo:r.pranzo??null,cena:r.cena??null,kinds:r.kinds||{}}}
   else if(col==="shopping"){if(del){delete S.checks[r.week];delete S.have[r.week]}else{S.checks[r.week]=r.checks||{};S.have[r.week]=r.have||{}}}
-  else if(col==="settings"){if(!del)for(const f of ["ranges","times"])if(r[f])S[f]=r[f]}
+  else if(col==="settings"){if(!del)for(const f of ["ranges","times","schedule"])if(r[f])S[f]=r[f]}
   else if(col==="photos"){if(del||!r.image)delete S.photos[r.recipe];else S.photos[r.recipe]=pb.files.getURL(r,r.image)}
-  else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],vis:r.vis,archived:r.archived}}
+  else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,archived:r.archived}}
   else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,cats:r.cats||[],c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
   else if(col==="categories"){if(del)delete S.cats[r.id];else S.cats[r.id]={name:r.name,color:r.color,order:r.order,goal:r.goal}}
+  else if(col==="types"){if(del)delete S.types[r.id];else S.types[r.id]={name:r.name,order:r.order}}
 }
 // le modifiche locali non ancora inviate hanno la precedenza su quello che arriva dal server
 function applyPending(){for(const {col,id,data,del} of outbox){
-  if(del){if(col==="ingredients")delete S.ingr[id];else if(col==="recipes")delete S.recipes[id];else if(col==="categories")delete S.cats[id]}
-  else if(col==="plan"){const p=S.plan[data.date]=S.plan[data.date]||{pranzo:null,cena:null};for(const m of ["pranzo","cena"])if(m in data)p[m]=data[m]}
+  if(del){if(col==="ingredients")delete S.ingr[id];else if(col==="recipes")delete S.recipes[id];else if(col==="categories")delete S.cats[id];else if(col==="types")delete S.types[id]}
+  else if(col==="plan"){const p=S.plan[data.date]=S.plan[data.date]||{pranzo:null,cena:null};for(const m of ["pranzo","cena","kinds"])if(m in data)p[m]=data[m]}
   else if(col==="shopping"){for(const f of ["checks","have"])if(f in data)S[f][data.week]=data[f]}
   else if(col==="settings")Object.assign(S,data);
   else if(col==="recipes")S.recipes[id]=Object.assign(S.recipes[id]||{},data);
   else if(col==="ingredients")S.ingr[id]=Object.assign(S.ingr[id]||{},data);
-  else if(col==="categories")S.cats[id]=Object.assign(S.cats[id]||{},data)}
+  else if(col==="categories")S.cats[id]=Object.assign(S.cats[id]||{},data);
+  else if(col==="types")S.types[id]=Object.assign(S.types[id]||{},data)}
   rebuildRecipes()}
 async function pull(){
   const lists=await Promise.all(COLS.map(c=>pb.collection(c).getFullList({batch:1000})));
-  S.plan={};S.checks={};S.have={};S.photos={};S.recipes={};S.ingr={};S.cats={};
+  S.plan={};S.checks={};S.have={};S.photos={};S.recipes={};S.ingr={};S.cats={};S.types={};
   COLS.forEach((c,i)=>lists[i].forEach(r=>applyRec(c,r)));
   applyPending();save();netOk=true;
 }
@@ -250,6 +274,10 @@ const slot=(k,m)=>(S.plan[k]||{})[m]||null;
 // un pasto è l'id di una ricetta oppure {o:"nota"} se è fuori casa
 const rid=v=>typeof v==="string"&&byId[v]?byId[v].id:null; // id attuale (anche dai vecchi id), null se la ricetta non esiste
 const outNote=v=>v&&typeof v==="object"?(v.o||""):null;
+// v = id del tipo, null = qualsiasi, undefined = torna alla settimana tipo
+function setKind(k,m,v){const p=S.plan[k]=S.plan[k]||{pranzo:null,cena:null};const o={...(p.kinds||{})};
+  if(v===undefined)delete o[m];else o[m]=v;p.kinds=o;save();queue("plan",ID.plan(k),{date:k,kinds:o})}
+const kindOpts=sel=>`<option value="">Qualsiasi</option>${TYP.map(t=>`<option value="${t.id}"${t.id===sel?" selected":""}>${esc(t.name)}</option>`).join("")}`;
 function setSlot(k,m,id){S.plan[k]=S.plan[k]||{pranzo:null,cena:null};S.plan[k][m]=id;save();queue("plan",ID.plan(k),{date:k,[m]:id})}
 const tagHtml=id=>{const c=catById[id];return c?`<span class="tag k${(c.color||0)%NCOL}">${esc(c.name)}</span>`:""};
 const tagsHtml=ids=>ids.map(tagHtml).join("");
@@ -363,6 +391,45 @@ function openTimes(){
    <div class="trow"><span><b>Cena</b> passata dalle</span><input type="time" id="t-cena" value="${S.times.cena}"></div>`);
   $("#sheetBody").onchange=e=>{const id=e.target.id;if(!id||!e.target.value)return;S.times[id.slice(2)]=e.target.value;save();queueSettings("times");renderWeek();renderSettings()};
 }
+/* ---------- Tipi e settimana tipo ---------- */
+function openTypes(){
+  const draw=()=>{$("#sheetBody").innerHTML=`<h3 class="shh" style="margin-top:0">Tipi</h3>
+    <p style="margin:0 0 8px;color:var(--muted);font-size:13.5px">Ogni ricetta ha uno o più tipi; ogni pasto della settimana ne ha uno e «Riempi» usa solo ricette di quel tipo. Tocca un tipo per rinominarlo o eliminarlo.</p>
+    <div class="ichips">${TYP.map(t=>`<button class="chip tchip" data-typ="${t.id}">${esc(t.name)} ✎</button>`).join("")}<button class="chip tchip" data-newtyp>＋ Nuovo tipo</button></div>
+    <h3 class="shh">Settimana tipo</h3>
+    <p style="margin:0 0 8px;color:var(--muted);font-size:13.5px">Il tipo di ogni pasto, da lunedì a domenica. Una singola settimana si cambia dal menu «✦ Riempi».</p>${kindGridHtml(false)}`};
+  openSheet("Pasti e tipi","");draw();
+  $("#sheetBody").onchange=e=>{const t=e.target;if(!t.dataset.m)return;const sc={pranzo:[...(S.schedule||DEF_SCHED).pranzo],cena:[...(S.schedule||DEF_SCHED).cena]};
+    sc[t.dataset.m][+t.dataset.day]=t.value||null;S.schedule=sc;save();queueSettings("schedule");renderWeek()};
+  $("#sheetBody").onclick=e=>{if(e.target.closest("[data-newtyp]")){openType(null);return}const b=e.target.closest("[data-typ]");if(b)openType(b.dataset.typ)};
+}
+function openType(id){
+  const old=id?S.types[id]:null,v={name:old?old.name:""},back=openTypes;
+  const used=old?R.filter(r=>r.ty.includes(id)):[];
+  openSheet(old?`Tipo<small>${esc(old.name)}</small>`:"Nuovo tipo",`<div class="editor">
+    <label class="ef"><span>Nome</span><input class="txt" id="tyName" value="${esc(v.name)}" placeholder="Es. Veloce" autocomplete="off"></label>
+    ${old?`<p class="shopnote" style="margin:0">${used.length?`${used.length} ${used.length===1?"ricetta":"ricette"} di questo tipo.`:"Nessuna ricetta di questo tipo."}</p>`:""}
+    <p class="hint" id="tyErr" hidden></p>
+    <div class="row"><button class="btn" data-save>Salva</button><button class="btn ghost" data-cancel>Annulla</button>${old?`<button class="btn ghost" data-delete>Elimina</button>`:""}</div>
+    <div id="delBox"></div></div>`);
+  if(!old)setTimeout(()=>($("#tyName")||{focus(){}}).focus(),260);
+  const body=$("#sheetBody"),fail=msg=>{const el=$("#tyErr");el.textContent=msg;el.hidden=false};
+  body.oninput=e=>{if(e.target.id==="tyName")v.name=e.target.value};
+  body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if("cancel" in b.dataset)back();
+    else if("delete" in b.dataset){$("#delBox").innerHTML=`<div class="confirm"><p>Eliminare il tipo <b>${esc(old.name)}</b>?${used.length?` Verrà tolto da ${used.length===1?"una ricetta":used.length+" ricette"}.`:""} I pasti della settimana tipo che lo usavano diventano «qualsiasi».</p>
+      <div class="row"><button class="btn danger" data-confirm>Elimina</button><button class="btn ghost" data-nodel>Annulla</button></div></div>`;$("#delBox").scrollIntoView({block:"nearest",behavior:"smooth"})}
+    else if("nodel" in b.dataset)$("#delBox").innerHTML="";
+    else if("confirm" in b.dataset){
+      for(const x in S.recipes){const ts=S.recipes[x].types||[];if(ts.includes(id)){const types=ts.filter(t=>t!==id);S.recipes[x].types=types;queue("recipes",x,{types})}}
+      const sc=S.schedule||DEF_SCHED;if(MEALS.some(m=>sc[m].includes(id))){S.schedule=Object.fromEntries(MEALS.map(m=>[m,sc[m].map(x=>x===id?null:x)]));queueSettings("schedule")}
+      delete S.types[id];queue("types",id,null,true);rebuildRecipes();save();renderAll();toast("Tipo eliminato");back()}
+    else if("save" in b.dataset){
+      const name=v.name.trim().replace(/\s+/g," ");if(!name)return fail("Manca il nome del tipo.");
+      const dup=TYP.find(t=>t.id!==id&&t.name.toLowerCase()===name.toLowerCase());if(dup)return fail(`C'è già il tipo «${dup.name}».`);
+      const nid=id||randId(),data=old?{name}:{name,order:Math.max(-1,...TYP.map(t=>t.order||0))+1};
+      S.types[nid]=Object.assign(S.types[nid]||{},data);queue("types",nid,data);rebuildRecipes();save();renderAll();toast(old?"Tipo salvato":"Tipo aggiunto");back()}};
+}
 /* ---------- Impostazioni ---------- */
 function renderSettings(){
   const r=S.ranges;
@@ -370,10 +437,11 @@ function renderSettings(){
   $("#setList").innerHTML=`
    <button class="setitem" data-s="goals"><span><b>Obiettivi settimanali e categorie</b><small>${esc(gs)}</small></span></button>
    <button class="setitem" data-s="ranges"><span><b>Pasto bilanciato</b><small>Carboidrati ${r.c[0]}–${r.c[1]}% · Proteine ${r.p[0]}–${r.p[1]}% · Grassi ${r.f[0]}–${r.f[1]}% · Fibre ≥${r.fib} g</small></span></button>
+   <button class="setitem" data-s="types"><span><b>Pasti e tipi</b><small>${TYP.length?"Tipi: "+esc(TYP.map(t=>t.name).join(", "))+" · settimana tipo":"Nessun tipo"}</small></span></button>
    <button class="setitem" data-s="times"><span><b>Orari dei pasti</b><small>Il pranzo passa alle ${S.times.pranzo}, la cena alle ${S.times.cena}</small></span></button>
    <button class="setitem" data-s="account"><span><b>Account</b><small>${esc(pb.authStore.record?.email||"")}</small></span></button>`;
 }
-$("#setList").addEventListener("click",e=>{const b=e.target.closest("[data-s]");if(!b)return;({goals:openGoals,ranges:()=>openRanges(),times:openTimes,account:openAccount})[b.dataset.s]()});
+$("#setList").addEventListener("click",e=>{const b=e.target.closest("[data-s]");if(!b)return;({goals:openGoals,ranges:()=>openRanges(),types:openTypes,times:openTimes,account:openAccount})[b.dataset.s]()});
 $("#closeSheet").addEventListener("click",()=>renderSettings());$("#scrim").addEventListener("click",()=>renderSettings());
 function scrollToToday(smooth){
   const el=document.querySelector(".day.is-today");
@@ -393,9 +461,10 @@ function renderWeek(){
     return `<div class="day${isT?" is-today":""}${dayPast(k)?" past":""}">
       <div class="dayhead"><span class="dname">${DAYS[i]}</span><span class="ddate">${d.getDate()} ${MONTHS[d.getMonth()]}</span>${isT?'<span class="badge">Oggi</span>':""}</div>
       <div class="slots">${["pranzo","cena"].map(m=>{const v=slot(k,m),o=outNote(v),r=rid(v)&&byId[rid(v)],past=isT&&isPast(k,m)?" past":"";
-        if(o!==null)return `<button class="slot${past}" data-k="${k}" data-m="${m}"><span class="meal">${m}</span>${outPh()}<span class="rname">${esc(o||"Pasto fuori casa")}</span></button>`;
-        return r?`<button class="slot${past}" data-k="${k}" data-m="${m}"><span class="meal">${m}</span><div class="ph">${S.photos[r.id]?`<img src="${S.photos[r.id]}" alt="">`:dishSvg(r)}${r.k.length?`<span class="tags">${tagsHtml(r.k.slice(0,2))}</span>`:""}</div><span class="rname">${esc(r.n)}</span>${m==="pranzo"&&shared(r,prevDinner(k)).length?`<span class="link">${LINK_ICO}con la cena di ieri</span>`:""}</button>`
-                :`<button class="slot empty${past}" data-k="${k}" data-m="${m}"><span class="meal">${m}</span><div class="ph">+ Scegli</div></button>`}).join("")}</div></div>`}).join("");
+        const t=kindOf(k,m),ml=`<span class="meal">${m}${t?` · <span class="kind${kindChanged(k,m)?" changed":""}">${esc(tname(t))}</span>`:""}</span>`;
+        if(o!==null)return `<button class="slot${past}" data-k="${k}" data-m="${m}">${ml}${outPh()}<span class="rname">${esc(o||"Pasto fuori casa")}</span></button>`;
+        return r?`<button class="slot${past}" data-k="${k}" data-m="${m}">${ml}<div class="ph">${S.photos[r.id]?`<img src="${S.photos[r.id]}" alt="">`:dishSvg(r)}${r.k.length?`<span class="tags">${tagsHtml(r.k.slice(0,2))}</span>`:""}</div><span class="rname">${esc(r.n)}</span>${m==="pranzo"&&shared(r,prevDinner(k)).length?`<span class="link">${LINK_ICO}con la cena di ieri</span>`:""}</button>`
+                :`<button class="slot empty${past}" data-k="${k}" data-m="${m}">${ml}<div class="ph">+ Scegli</div></button>`}).join("")}</div></div>`}).join("");
 }
 // l'app installata può restare aperta per giorni: se è cambiato il giorno torno alla settimana di oggi
 function checkDay(){const t=new Date();if(key(t)===key(today))return false;today=t;thisMonday=mondayOf(t);offset=0;renderAll();scrollToToday();return true}
@@ -412,9 +481,12 @@ function autofill(all){
   const keys=weekKeys();
   // "rifai tutto" tiene i pasti fuori casa
   if(all)keys.forEach(k=>["pranzo","cena"].forEach(m=>{if(outNote(slot(k,m))===null&&slot(k,m))setSlot(k,m,null)}));
-  const empty=[];keys.forEach(k=>["pranzo","cena"].forEach(m=>{if(!slot(k,m))empty.push(k+"|"+m)}));
-  if(!empty.length){toast("La settimana è già piena");return}
-  if(!R.length){toast("Nessuna ricetta da usare");return}
+  const free=[];keys.forEach(k=>["pranzo","cena"].forEach(m=>{if(!slot(k,m))free.push(k+"|"+m)}));
+  if(!free.length){toast("La settimana è già piena");return}
+  // per ogni pasto solo le ricette adatte (pranzo/cena e tipo); se non ce ne sono resta vuoto
+  const candOf=sl=>{const [k,m]=sl.split("|");return R.filter(r=>fits(r,k,m))};
+  const cands=free.map(candOf),empty=free.filter((_,i)=>cands[i].length),cand=cands.filter(c=>c.length),skipped=free.length-empty.length;
+  if(!empty.length){toast("Nessuna ricetta adatta a questi pasti");return}
   const pos=Object.fromEntries(empty.map((s,i)=>[s,i]));
   const prevKey=k=>key(addDays(new Date(k+"T12:00"),-1));
   const at=(a,k,m)=>{const i=pos[k+"|"+m];if(i!==undefined)return a[i];const id=rid(slot(k,m));return id?byId[id]:null};
@@ -427,13 +499,13 @@ function autofill(all){
     for(const k of keys){const p=at(a,k,"pranzo"),d=at(a,k,"cena");if(p&&d)s+=30*p.k.filter(x=>d.k.includes(x)).length;
       const ieri=at(a,prevKey(k),"cena");if(p&&ieri)s-=3*link(p,ieri)}
     return s};
-  const pick=()=>R[Math.floor(Math.random()*R.length)];
+  const pick=i=>cand[i][Math.floor(Math.random()*cand[i].length)];
   let best=null,bestC=Infinity;
-  for(let t=0;t<6;t++){const a=empty.map(pick);let c=cost(a);
-    for(let it=0;it<1500;it++){const i=Math.floor(Math.random()*a.length),old=a[i];a[i]=pick();const c2=cost(a);if(c2<=c)c=c2;else a[i]=old}
+  for(let t=0;t<6;t++){const a=empty.map((_,i)=>pick(i));let c=cost(a);
+    for(let it=0;it<1500;it++){const i=Math.floor(Math.random()*a.length),old=a[i];a[i]=pick(i);const c2=cost(a);if(c2<=c)c=c2;else a[i]=old}
     if(c<bestC){best=a;bestC=c}}
   empty.forEach((s,i)=>{const [k,m]=s.split("|");setSlot(k,m,best[i].id)});
-  save();renderAll();toast(`Aggiunti ${empty.length} pasti`);
+  save();renderAll();toast(`Aggiunti ${empty.length} pasti${skipped?` · ${skipped} senza ricette adatte`:""}`);
 }
 function weekName(o){return o===0?"Questa settimana":o===1?"Prossima settimana":o===-1?"Settimana scorsa":(o>0?`Tra ${o} settimane`:`${-o} settimane fa`)}
 function cloneWeek(fromOff){
@@ -456,12 +528,27 @@ $("#autoBtn").addEventListener("click",()=>{
     <h3 class="shh">Copia una settimana passata</h3>
     ${past.length?`<div class="choice">${past.map(p=>`<button data-clone="${p.o}"><b>${weekName(p.o)} · ${fmtR(p.st)}</b><span>${p.ids.length} pasti: ${esc([...new Set(p.ids)].slice(0,3).map(id=>byId[id].n).join(", "))}${new Set(p.ids).size>3?"…":""}</span></button>`).join("")}</div>`
       :`<p style="color:var(--muted);font-size:13.5px;margin:0">Nessuna settimana passata da copiare.</p>`}
-    <h3 class="shh">Altro</h3><div class="choice"><button data-a="clear"><b>Svuota la settimana</b><span>Toglie tutti i pasti, anche quelli fuori casa.</span></button></div>`);
+    <h3 class="shh">Altro</h3><div class="choice"><button data-a="kinds"><b>Tipi di questa settimana</b><span>Es. un festivo infrasettimanale: cambia il tipo dei pasti solo per questa settimana.</span></button><button data-a="clear"><b>Svuota la settimana</b><span>Toglie tutti i pasti, anche quelli fuori casa.</span></button></div>`);
   $("#sheetBody").onclick=e=>{const cl=e.target.closest("[data-clone]");if(cl){closeSheet();cloneWeek(+cl.dataset.clone);return}
-    const b=e.target.closest("[data-a]");if(!b)return;closeSheet();
+    const b=e.target.closest("[data-a]");if(!b)return;if(b.dataset.a==="kinds"){openWeekKinds();return}closeSheet();
     if(b.dataset.a==="clear"){weekKeys().forEach(k=>["pranzo","cena"].forEach(m=>{if(slot(k,m))setSlot(k,m,null)}));renderAll();toast("Settimana svuotata")}
     else autofill(b.dataset.a==="all")};
 });
+
+/* griglia giorni × pasti con il tipo di ognuno; week = questa settimana (cambi solo per i suoi giorni) o settimana tipo */
+function kindGridHtml(week){return `<div class="kgrid"><span></span><b>Pranzo</b><b>Cena</b>${(week?weekKeys():DAYS).map((k,i)=>`<span>${DAYS[i]}${week?` <small>${addDays(weekStart(),i).getDate()}</small>`:""}</span>`+
+  MEALS.map(m=>{const v=week?kindOf(k,m):((S.schedule||DEF_SCHED)[m]||[])[i];return `<select class="txt${week&&kindChanged(k,m)?" changed":""}" data-day="${i}" data-m="${m}" aria-label="${DAYS[i]} ${m}">${kindOpts(typById[v]?v:null)}</select>`}).join("")).join("")}</div>`}
+function openWeekKinds(){
+  const draw=()=>{const ch=weekKeys().some(k=>MEALS.some(m=>kindChanged(k,m)));
+    $("#sheetBody").innerHTML=`<p style="margin:0 0 10px;color:var(--muted);font-size:13.5px">Vale solo per questa settimana; le altre seguono la settimana tipo (Impostazioni → Pasti e tipi). In evidenza i pasti cambiati.</p>${kindGridHtml(true)}
+     <div class="row" style="margin-top:12px"><button class="btn" data-done>Fatto</button>${ch?`<button class="btn ghost" data-reset>Torna alla settimana tipo</button>`:""}</div>`};
+  const a=weekStart(),b=addDays(a,6);
+  openSheet(`Tipi di questa settimana<small>${a.getDate()} ${MONTHS[a.getMonth()]} – ${b.getDate()} ${MONTHS[b.getMonth()]}</small>`,"");draw();
+  $("#sheetBody").onchange=e=>{const t=e.target;if(!t.dataset.m)return;const k=weekKeys()[+t.dataset.day],m=t.dataset.m,v=t.value||null;
+    setKind(k,m,v===schedOf(k,m)?undefined:v);draw();renderWeek()};
+  $("#sheetBody").onclick=e=>{if(e.target.closest("[data-done]"))closeSheet();
+    else if(e.target.closest("[data-reset]")){weekKeys().forEach(k=>MEALS.forEach(m=>{if(kindChanged(k,m))setKind(k,m,undefined)}));draw();renderWeek()}};
+}
 
 /* ---------- Foglio in basso ---------- */
 function openSheet(title,html){$("#sheetTitle").innerHTML=title;$("#sheetBody").innerHTML=html;$("#sheetBody").onclick=null;$("#sheetBody").onchange=null;$("#sheetBody").oninput=null;$("#sheet").classList.add("open");$("#scrim").classList.add("open");$("#sheetBody").scrollTop=0}
@@ -470,7 +557,7 @@ $("#scrim").onclick=closeSheet;$("#closeSheet").onclick=closeSheet;
 const slotLabel=(k,m)=>{const d=new Date(k+"T12:00");return `${DAYS[(d.getDay()+6)%7]} ${d.getDate()} ${MONTHS[d.getMonth()]} · ${m}`};
 function filtersHtml(active,all){return [null,...CAT.map(c=>c.id)].map(t=>`<button data-f="${t||""}" aria-pressed="${(t||null)===active}">${t?esc(cname(t)):(all||"Tutte")}</button>`).join("")}
 const cname=id=>catById[id]?catById[id].name:"";
-function cardHtml(r,cur,showBal,extra){const ok=!checkBalance(nutrition(r)).length;return `<button class="rcard${cur?" current":""}" data-id="${r.id}">${photoHtml(r)}<span class="rinfo"><span class="rname">${esc(r.n)}</span><span class="row" style="gap:6px">${tagsHtml(r.k)}</span>${extra||""}</span>${showBal&&!ok?`<span class="warnico" title="Da rivedere" aria-label="Da rivedere"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z" fill="currentColor"/><path d="M12 9v5" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="1.4" fill="var(--surface)"/></svg></span>`:""}</button>`}
+function cardHtml(r,cur,showBal,extra){const ok=!checkBalance(nutrition(r)).length;return `<button class="rcard${cur?" current":""}" data-id="${r.id}">${photoHtml(r)}<span class="rinfo"><span class="rname">${esc(r.n)}</span><span class="row" style="gap:6px">${tagsHtml(r.k)}</span><span class="meta">${esc(recMeta(r))}</span>${extra||""}</span>${showBal&&!ok?`<span class="warnico" title="Da rivedere" aria-label="Da rivedere"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z" fill="currentColor"/><path d="M12 9v5" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="1.4" fill="var(--surface)"/></svg></span>`:""}</button>`}
 
 function openPicker(k,m,f){
   const cur=rid(slot(k,m)),c=counts();
@@ -482,10 +569,15 @@ function openPicker(k,m,f){
   const sh=Object.fromEntries(R.map(r=>[r.id,shared(r,partner)]));
   const needs=r=>r.k.some(x=>missId.has(x));
   const list=R.filter(r=>!f||r.k.includes(f)).sort((a,b)=>needs(b)-needs(a)||sh[b.id].length-sh[a.id].length);
+  const ok=list.filter(r=>fits(r,k,m)),other=list.filter(r=>!fits(r,k,m)),t=kindOf(k,m);
+  const card=r=>cardHtml(r,r.id===cur,false,sh[r.id].length?`<span class="link">${LINK_ICO}${esc(sh[r.id].slice(0,3).join(", ").toLowerCase())} come ${pl}</span>`:"");
   openSheet(`Scegli la ricetta<small>${slotLabel(k,m)}</small>`,
     `<button class="rcard outcard" data-out>${outPh()}<span class="rinfo"><span class="rname">Pasto fuori casa</span><span class="meta">Ristorante, da amici, salto il pasto… non conta per obiettivi e spesa</span></span></button>`+
     (miss.length&&!f?`<div class="hint">Questa settimana manca ancora: ${esc(miss.map(x=>`${x.name.toLowerCase()} (${x.goal.min-(c[x.id]||0)})`).join(", "))}</div>`:"")+
-    `<div class="filters">${filtersHtml(f||null)}</div><div class="pick">${list.map(r=>cardHtml(r,r.id===cur,false,sh[r.id].length?`<span class="link">${LINK_ICO}${esc(sh[r.id].slice(0,3).join(", ").toLowerCase())} come ${pl}</span>`:"")).join("")}</div>`);
+    `<label class="kpick"><span>Tipo di questo pasto</span><select class="txt${kindChanged(k,m)?" changed":""}" data-kind>${kindOpts(t)}</select></label>`+
+    `<div class="filters">${filtersHtml(f||null)}</div><div class="pick">${ok.map(card).join("")||`<p class="shopnote">Nessuna ricetta ${m==="pranzo"?"da pranzo":"da cena"}${t?` di tipo ${esc(tname(t).toLowerCase())}`:""}${f?" in questa categoria":""}.</p>`}</div>`+
+    (other.length?`<h3 class="shh">Non adatte a questo pasto</h3><div class="pick other">${other.map(card).join("")}</div>`:""));
+  $("#sheetBody").onchange=e=>{if(!e.target.dataset||!("kind" in e.target.dataset))return;const v=e.target.value||null;setKind(k,m,v===schedOf(k,m)?undefined:v);renderWeek();openPicker(k,m,f)};
   $("#sheetBody").onclick=e=>{
     if(e.target.closest("[data-out]")){openOut(k,m);return}
     const fb=e.target.closest("[data-f]");if(fb){openPicker(k,m,fb.dataset.f||null);return}
@@ -511,6 +603,7 @@ function openOut(k,m){
 function fmtQty(q,u){const n=Math.round(q*10)/10;if(u==="g"&&n>=1000)return(n/1000).toString().replace(".",",")+" kg";return `${String(n).replace(".",",")} ${u}`}
 function recipeHtml(r){return photoHtml(r,"hero")+`<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="row">${tagsHtml(r.k)}<span style="color:var(--muted);font-size:13px">${SERV_LBL}</span></span>
   <label class="btn ghost filebtn" style="padding:6px 12px;font-size:13px">${S.photos[r.id]?"Cambia foto":"Aggiungi foto"}<input type="file" accept="image/*" data-photo="${r.id}"></label></div>
+  <p class="rmeta">${esc(recMeta(r))}</p>
   ${nutHtml(nutrition(r))}
   <ul class="ing">${r.i.map(x=>`<li><span>${esc(x[0])}</span><span>${fmtQty(x[1],x[2])}</span></li>`).join("")}</ul>
   <ol class="steps">${r.s.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`}
@@ -574,7 +667,7 @@ const activeUses=n=>usesOf(n).filter(r=>!r.archived);
 const usesOf=n=>Object.keys(S.recipes).filter(id=>(S.recipes[id].ingredients||[]).some(x=>x[0]===n)).map(id=>byId[id]);
 function openEditor(id,back){
   const r=id?byId[id]:null;
-  const d={n:r?r.n:"",s:r?r.s.join("\n"):"",open:-1,
+  const d={n:r?r.n:"",s:r?r.s.join("\n"):"",open:-1,meals:r?[...r.meals]:[...MEALS],ty:r?[...r.ty]:[],
     rows:r?r.i.map(([n,q,u])=>({n,q:String(q),u})):[{n:"",q:"",u:"g"}],
     ing:{}}; // valori degli ingredienti nuovi o modificati qui, per nome; finiscono nel catalogo al salvataggio
   const vals=n=>d.ing[n]||ING[n]||null;
@@ -605,6 +698,8 @@ function openEditor(id,back){
   const draw=()=>{
     $("#sheetBody").innerHTML=`<div class="editor">
       <label class="ef"><span>Nome</span><input class="txt" id="edName" value="${esc(d.n)}" placeholder="Es. Pasta e ceci" autocomplete="off"></label>
+      <div class="ef"><span>Pasto <small>almeno uno</small></span><div class="ichips">${MEALS.map(m=>`<button type="button" class="chip k9" data-meal="${m}" aria-pressed="${d.meals.includes(m)}">${m==="pranzo"?"Pranzo":"Cena"}</button>`).join("")}</div></div>
+      <div class="ef"><span>Tipo <small>almeno uno</small></span><div class="ichips">${TYP.map(t=>`<button type="button" class="chip k9" data-typ="${t.id}" aria-pressed="${d.ty.includes(t.id)}">${esc(t.name)}</button>`).join("")||`<small>Nessun tipo: si creano da Impostazioni → Pasti e tipi.</small>`}</div></div>
       <div class="ef"><span>Categorie <small>dagli ingredienti</small></span><div id="edCat"></div></div>
       <div class="ef"><span>Ingredienti <small>${SERV_LBL}</small></span><div class="erows">${d.rows.map(rowHtml).join("")}</div>
         <button class="btn ghost" data-add>＋ Ingrediente</button></div>
@@ -618,6 +713,8 @@ function openEditor(id,back){
   const doSave=()=>{
     const name=d.n.trim(),rows=d.rows.filter(x=>x.n.trim()||x.q);
     if(!name)return fail("Manca il nome della ricetta.");
+    if(!d.meals.length)return fail("Scegli se è da pranzo, da cena o entrambi.");
+    if(TYP.length&&!d.ty.length)return fail("Scegli almeno un tipo.");
     if(!rows.length)return fail("Aggiungi almeno un ingrediente.");
     if(rows.some(x=>!x.n.trim()||!(+x.q>0)))return fail("Ogni ingrediente ha bisogno di nome e quantità.");
     const fresh=[...new Set(rows.map(x=>canon(x.n)))].filter(n=>!vals(n));
@@ -627,7 +724,7 @@ function openEditor(id,back){
       if(sameIng(old,data))continue;
       const iid=old?old.id:newIngId(n);S.ingr[iid]=data;queue("ingredients",iid,data)}
     const nid=r?r.id:randId(),ingr=rows.map(x=>[canon(x.n),+x.q,x.u]);
-    const data={name,ingredients:ingr,steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),archived:false};
+    const data={name,meals:MEALS.filter(m=>d.meals.includes(m)),types:TYP.filter(t=>d.ty.includes(t.id)).map(t=>t.id),ingredients:ingr,steps:d.s.split("\n").map(x=>x.trim()).filter(Boolean),archived:false};
     S.recipes[nid]=Object.assign(S.recipes[nid]||{vis:null},data);queue("recipes",nid,data);
     rebuildRecipes();save();renderAll();toast(r?"Ricetta salvata":"Ricetta aggiunta");openRecipe(nid)};
   openSheet(r?`Modifica ricetta<small>${esc(r.n)}</small>`:"Nuova ricetta","");draw();
@@ -641,7 +738,8 @@ function openEditor(id,back){
   body.onchange=e=>{const t=e.target;if(t.dataset.f!=="n")return;const i=+t.dataset.i;d.rows[i].n=canon(t.value);t.value=d.rows[i].n;
     if(d.open===i){const n=d.rows[i].n;if(n&&!d.ing[n])d.ing[n]={...(ING[n]||{cats:[]})};draw()}else refresh()};
   body.onclick=e=>{const b=e.target.closest("button");if(!b)return;
-    if(b.dataset.icat){const n=canon(d.rows[+b.dataset.i].n);toggleCat(d.ing[n],b.dataset.icat);b.setAttribute("aria-pressed",d.ing[n].cats.includes(b.dataset.icat));refresh()}
+    if(b.dataset.meal||b.dataset.typ){const arr=b.dataset.meal?d.meals:d.ty,v=b.dataset.meal||b.dataset.typ,i=arr.indexOf(v);if(i<0)arr.push(v);else arr.splice(i,1);b.setAttribute("aria-pressed",i<0)}
+    else if(b.dataset.icat){const n=canon(d.rows[+b.dataset.i].n);toggleCat(d.ing[n],b.dataset.icat);b.setAttribute("aria-pressed",d.ing[n].cats.includes(b.dataset.icat));refresh()}
     else if("add" in b.dataset){d.rows.push({n:"",q:"",u:"g"});draw();body.querySelector(`[data-i="${d.rows.length-1}"][data-f="n"]`).focus()}
     else if(b.dataset.del){const i=+b.dataset.del;d.rows.splice(i,1);if(!d.rows.length)d.rows.push({n:"",q:"",u:"g"});d.open=d.open===i?-1:d.open>i?d.open-1:d.open;draw()}
     else if(b.dataset.open){const i=+b.dataset.open,n=canon(d.rows[i].n);d.open=d.open===i?-1:i;if(d.open===i&&!d.ing[n])d.ing[n]={...(ING[n]||{cats:[]})};draw()}

@@ -17,7 +17,7 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - **Collezioni:** `plan` (un record per giorno), `shopping` (uno per settimana), `settings` (record unico), `photos` (una foto per ricetta, 960×600 JPEG; il record si cerca per `recipe`), `recipes`, `ingredients` (catalogo). Regole: solo utenti autenticati. Registrazione pubblica disattivata.
 - **Locale per dispositivo:** `shopMode` (Controllo a casa / Al mercato).
 - **Service worker:** file dell'app stale-while-revalidate, foto e font cache-first, `/api/` sempre in rete.
-- **Ricette nel database** (migrazione `1761980400_recipes.js`, che ha importato le 17 di esempio): `recipes` = nome, `ingredients` `[[nome, quantità, unità]]` già per 2,5 porzioni (l'olio è un ingrediente, "Olio extravergine"), `steps`, `vis` (illustrazione), `archived` (eliminata: sparisce da elenco, selettore e riempimento ma resta nei pasti pianificati). `ingredients` = catalogo per nome: `cats` (id delle categorie), `c`/`p`/`f`/`fib` per 100 g, `unit_g` (peso di un'unità). `categories` = `name`, `color` (indice 0–9 della tavolozza `--k0…--k9` in `app.css`), `order`, `goal` `{min, max}` (migrazione `1762156800_categories.js`: le sette fonti proteiche sono diventate categorie; via `prot`, `dept`, `recipes.cat`, `recipes.oil`, `settings.goals`). In `app.js` `rebuildRecipes()` costruisce `CAT` (categorie in ordine), `R` (attive), `byId` (tutte, più gli alias dei vecchi id tipo `ceci` → `rceci0000000000`; `r.k` = categorie della ricetta) e `ING`. Id: ricette e categorie nuove casuali, ingredienti `i` + hash del nome (casuale se quell'id è già preso da un ingrediente rinominato). La coda `outbox` gestisce anche le eliminazioni (`del: true`).
+- **Ricette nel database** (migrazione `1761980400_recipes.js`, che ha importato le 17 di esempio): `recipes` = nome, `ingredients` `[[nome, quantità, unità]]` già per 2,5 porzioni (l'olio è un ingrediente, "Olio extravergine"), `steps`, `vis` (illustrazione), `archived` (eliminata: sparisce da elenco, selettore e riempimento ma resta nei pasti pianificati). `ingredients` = catalogo per nome: `cats` (id delle categorie), `c`/`p`/`f`/`fib` per 100 g, `unit_g` (peso di un'unità). `categories` = `name`, `color` (indice 0–9 della tavolozza `--k0…--k9` in `app.css`), `order`, `goal` `{min, max}` (migrazione `1762156800_categories.js`: le sette fonti proteiche sono diventate categorie; via `prot`, `dept`, `recipes.cat`, `recipes.oil`, `settings.goals`). Pasto e tipo (migrazione `1762243200_types.js`): `recipes.meals` (`["pranzo","cena"]`), `recipes.types` (id), collezione `types` (`name`, `order`; iniziali `tferiale0000000`, `tfestivo0000000`), `settings.schedule` (settimana tipo `{pranzo:[7], cena:[7]}`, null = qualsiasi), `plan.kinds` (tipo cambiato per quel giorno; `kindOf()` in `app.js`). In `app.js` `rebuildRecipes()` costruisce `CAT` (categorie in ordine), `R` (attive), `byId` (tutte, più gli alias dei vecchi id tipo `ceci` → `rceci0000000000`; `r.k` = categorie della ricetta) e `ING`. Id: ricette e categorie nuove casuali, ingredienti `i` + hash del nome (casuale se quell'id è già preso da un ingrediente rinominato). La coda `outbox` gestisce anche le eliminazioni (`del: true`).
 - Online su https://cucinario.ededona.es: container su `127.0.0.1:8091`, nginx in Docker gestito con Ansible dal repo `infra` sulla Raspberry (`~/infra`, voce `cucinario` in `proxy_sites`).
 - Deploy: `./deploy.sh` (git pull + `docker compose up -d --build`), anche da cron ogni 5 minuti.
 - Backup: cron interno di PocketBase, lunedì 3:00, ultimi 8 in `pb_data/backups/`.
@@ -37,6 +37,14 @@ Le crea e gestisce la famiglia (Impostazioni → Obiettivi settimanali e categor
 - Un **ingrediente** ha zero o più categorie; una **ricetta** ha tutte le categorie dei suoi ingredienti (non si scelgono sulla ricetta). Es. polpette = carne + uova (+ latticini se il parmigiano è segnato latticini).
 - Le categorie sono: i **tag** di ricette e ingredienti, i **filtri** delle due liste, i **gruppi della lista della spesa** e la base degli **obiettivi settimanali**.
 - Eliminare una categoria la toglie da tutti gli ingredienti e ne cancella l'obiettivo.
+
+### Pasto e tipo
+- Ogni ricetta ha un **pasto**: pranzo e/o cena (fisso, almeno uno) e uno o più **tipi** (personalizzabili, all'inizio **Feriale** e **Festivo**; "Lavoro" scartato perché coincide col pranzo feriale). Si scelgono nell'editor con dei chip; elenco e dettaglio li mostrano ("Pranzo e cena · Feriale, Festivo").
+- **Settimana tipo** (Impostazioni → Pasti e tipi, insieme a creare/rinominare/eliminare i tipi): il tipo di ogni pranzo e cena da lunedì a domenica. Default: pranzi lun–ven e cene lun–gio feriali; venerdì sera e fine settimana festivi. "Qualsiasi" = nessun vincolo.
+- **Per una sola settimana** (es. festivo infrasettimanale): "✦ Riempi" → **Tipi di questa settimana**, oppure il menu "Tipo di questo pasto" nel selettore. I pasti cambiati sono evidenziati in arancione nella settimana; "Torna alla settimana tipo" annulla.
+- Nella settimana ogni pasto mostra il suo tipo ("PRANZO · FERIALE").
+- **Riempi** usa solo ricette adatte al pasto e al suo tipo; se per un pasto non ce n'è nessuna lo lascia vuoto e lo dice. Il **selettore** mostra prima le adatte e sotto, sbiadite, "Non adatte a questo pasto" (sempre sceglibili).
+- Una ricetta senza tipi (es. dopo aver eliminato il suo unico tipo) va bene per tutti. Eliminare un tipo lo toglie dalle ricette e mette "qualsiasi" nella settimana tipo.
 
 ### Obiettivi settimanali
 - Per categoria: **almeno N** e/o **al massimo N** volte a settimana (pranzi + cene). Un pasto conta una volta per ognuna delle sue categorie.
@@ -92,7 +100,7 @@ Le crea e gestisce la famiglia (Impostazioni → Obiettivi settimanali e categor
 - Eliminare = archiviare; salvare dall'editor una ricetta eliminata la ripristina.
 
 ### Impostazioni (scheda in basso)
-Obiettivi settimanali e categorie (creare, rinominare, colore, eliminare), Pasto bilanciato (intervalli), Orari dei pasti, Account (esci).
+Obiettivi settimanali e categorie (creare, rinominare, colore, eliminare), Pasti e tipi (tipi e settimana tipo), Pasto bilanciato (intervalli), Orari dei pasti, Account (esci).
 
 ### Navigazione
 Barra in basso: **Settimana · Spesa · Ricette · Impostazioni**.
