@@ -536,6 +536,8 @@ const ingData=(name,v)=>({name,dept:v.dept||"Dispensa",prot:PROT.includes(v.prot
 const sameIng=(a,b)=>a&&b&&a.name===b.name&&INGF.every(k=>(a[k]||0)===(b[k]||0));
 // id deterministico dal nome; se è già preso (ingrediente rinominato) ne uso uno casuale
 const newIngId=n=>{const id=ID.ingredients(n);return S.ingr[id]?randId():id};
+// tutte le ricette che usano l'ingrediente, anche quelle eliminate; activeUses solo quelle attive (catalogo, eliminazione)
+const activeUses=n=>usesOf(n).filter(r=>!r.archived);
 const usesOf=n=>Object.keys(S.recipes).filter(id=>(S.recipes[id].ingredients||[]).some(x=>x[0]===n)).map(id=>byId[id]);
 // dopo un cambio al catalogo: le ricette che usano quegli ingredienti tengono aggiornata la copia della categoria sul server
 function syncCats(names){for(const n of names)for(const r of usesOf(n)){const cat=r.t||"";
@@ -622,7 +624,7 @@ let ingQuery="";
 function renderIng(){
   const q=ingQuery.trim().toLowerCase(),all=Object.keys(S.ingr).map(id=>({id,...S.ingr[id]}));
   const list=all.filter(x=>!q||x.name.toLowerCase().includes(q));
-  const nUses=Object.fromEntries(all.map(x=>[x.name,usesOf(x.name).length]));
+  const nUses=Object.fromEntries(all.map(x=>[x.name,activeUses(x.name).length]));
   $("#ingCat").innerHTML=!all.length?`<p class="empty-note">Nessun ingrediente.<br>Aggiungilo con «Nuovo».</p>`:!list.length?`<p class="empty-note">Nessun ingrediente con «${esc(ingQuery.trim())}».</p>`:
     CATS.map(c=>{const its=list.filter(x=>(x.dept||"Dispensa")===c).sort((a,b)=>a.name.localeCompare(b.name,"it"));if(!its.length)return"";
       return `<div class="cat"><h3>${c}</h3><div class="items">${its.map(x=>`<button class="item" data-ing="${x.id}"><span class="iname"><b>${esc(x.name)}</b>
@@ -630,12 +632,12 @@ function renderIng(){
 }
 function openIngredient(id){
   const old=id?S.ingr[id]:null,v=old?{...old}:{name:ingQuery.trim(),dept:"Dispensa",prot:""};
-  const uses=old?usesOf(old.name):[];
+  const all=old?usesOf(old.name):[],uses=all.filter(r=>!r.archived);
   openSheet(old?`Ingrediente<small>${esc(old.name)}</small>`:"Nuovo ingrediente",`<div class="editor">
     <label class="ef"><span>Nome</span><input class="txt" id="igName" value="${esc(v.name)}" placeholder="Es. Ceci cotti" autocomplete="off"></label>
     <div class="evals iform"><p>Valori per 100 g, come sull'etichetta. Se è una fonte proteica, le ricette che lo usano prendono la sua categoria.</p>${ingFieldsHtml(v)}</div>
     ${uses.length?`<div class="ef"><span>Usato in ${uses.length} ${uses.length===1?"ricetta":"ricette"} <small>i cambiamenti valgono per tutte</small></span>
-      <ul class="uses">${uses.map(r=>`<li>${esc(r.n)}${r.archived?" <small>(eliminata)</small>":""}</li>`).join("")}</ul></div>`:""}
+      <ul class="uses">${uses.map(r=>`<li>${esc(r.n)}</li>`).join("")}</ul></div>`:""}
     <p class="hint" id="igErr" hidden></p>
     <div class="row"><button class="btn" data-save>Salva</button><button class="btn ghost" data-cancel>Annulla</button>${old&&!uses.length?`<button class="btn ghost" data-delete>Elimina</button>`:""}</div>
     ${old&&uses.length?`<p class="shopnote" style="margin:0">Non si può eliminare finché è usato in una ricetta: prima toglilo da ${uses.length===1?"quella ricetta":"quelle ricette"}.</p>`:""}
@@ -649,7 +651,7 @@ function openIngredient(id){
     else if("delete" in b.dataset){$("#delBox").innerHTML=`<div class="confirm"><p>Eliminare <b>${esc(old.name)}</b> dal catalogo?</p>
       <div class="row"><button class="btn danger" data-confirm>Elimina</button><button class="btn ghost" data-nodel>Annulla</button></div></div>`;$("#delBox").scrollIntoView({block:"nearest",behavior:"smooth"})}
     else if("nodel" in b.dataset)$("#delBox").innerHTML="";
-    else if("confirm" in b.dataset){if(usesOf(old.name).length)return fail("Nel frattempo è stato usato in una ricetta: non si può eliminare.");
+    else if("confirm" in b.dataset){if(activeUses(old.name).length)return fail("Nel frattempo è stato usato in una ricetta: non si può eliminare.");
       delete S.ingr[id];queue("ingredients",id,null,true);rebuildRecipes();save();closeSheet();renderAll();toast("Ingrediente eliminato")}
     else if("save" in b.dataset){
       const name=v.name.trim().replace(/\s+/g," ");if(!name)return fail("Manca il nome dell'ingrediente.");
@@ -658,8 +660,8 @@ function openIngredient(id){
       const data=ingData(name,v);
       if(sameIng(old,data)){closeSheet();return}
       const iid=old?id:newIngId(name);S.ingr[iid]=data;queue("ingredients",iid,data);
-      // nome cambiato: lo cambio anche nelle ricette che lo usano
-      if(old&&old.name!==name)for(const r of uses){const ingredients=S.recipes[r.id].ingredients.map(x=>x[0]===old.name?[name,...x.slice(1)]:x);
+      // nome cambiato: lo cambio anche nelle ricette che lo usano (anche eliminate, così restano giuste nei pasti passati)
+      if(old&&old.name!==name)for(const r of all){const ingredients=S.recipes[r.id].ingredients.map(x=>x[0]===old.name?[name,...x.slice(1)]:x);
         S.recipes[r.id].ingredients=ingredients;queue("recipes",r.id,{ingredients})}
       rebuildRecipes();syncCats([name]);save();closeSheet();renderAll();
       toast(old?(uses.length?`Ingrediente salvato, ${uses.length} ${uses.length===1?"ricetta aggiornata":"ricette aggiornate"}`:"Ingrediente salvato"):"Ingrediente aggiunto")}};

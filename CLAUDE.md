@@ -83,10 +83,10 @@ Sette: **lenticchie, fagioli, ceci, pesce, carne, uova, latticini** (i legumi er
 - Scheda Ricette → **＋ Nuova ricetta**; dal dettaglio di una ricetta (anche dal pasto in settimana) → **Modifica** / **Elimina**.
 - Editor: nome, righe ingrediente (nome dal catalogo, quantità, unità), olio, procedimento (un passaggio per riga). La fonte proteica e il pannello del bilanciamento si aggiornano mentre si scrive.
 - Ingrediente non ancora nel catalogo: la riga diventa arancione e chiede reparto, fonte proteica, valori per 100 g e peso di un'unità; non si salva finché non sono inseriti. Cambiare i valori di un ingrediente esistente vale per tutte le ricette.
-- **Catalogo ingredienti**: scheda Ricette → interruttore **Ricette / Ingredienti**. Elenco per reparto con ricerca, "in N ricette" e tag della fonte proteica; **＋ Nuovo**; toccando un ingrediente si modificano nome, reparto, fonte proteica e valori.
-  - **Rinominare** aggiorna il nome in tutte le ricette che lo usano (anche quelle eliminate).
+- **Catalogo ingredienti**: scheda Ricette → interruttore **Ricette / Ingredienti**. Elenco per reparto con ricerca, "in N ricette" (solo ricette attive) e tag della fonte proteica; **＋ Nuovo**; toccando un ingrediente si modificano nome, reparto, fonte proteica e valori.
+  - **Rinominare** aggiorna il nome in tutte le ricette che lo usano (anche quelle eliminate, senza mostrarle).
   - Cambiare la fonte proteica ricalcola la categoria delle ricette.
-  - **Eliminare** è possibile solo se nessuna ricetta lo usa (nemmeno eliminata): altrimenti mostra l'elenco delle ricette. Eliminare un ingrediente lo cancella davvero dal database.
+  - **Eliminare** è possibile solo se nessuna ricetta attiva lo usa: altrimenti mostra l'elenco delle ricette. Le ricette eliminate non contano (né nel conteggio né nell'elenco); se ne usavano uno eliminato, nei pasti passati quell'ingrediente non ha più valori e, ripristinando la ricetta, l'editor lo chiede come nuovo. Eliminare un ingrediente lo cancella davvero dal database.
 - Eliminare = archiviare; salvare dall'editor una ricetta eliminata la ripristina.
 
 ### Impostazioni (scheda in basso)
