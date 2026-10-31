@@ -14,6 +14,7 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - **Schema** in `pb_migrations/` (JS, API PocketBase ≥ 0.23: `new Collection({...fields})`, `app.save`). Le modifiche allo schema vanno fatte con una **nuova** migrazione, non modificando quelle già applicate. `--automigrate=false`.
 - **Frontend** senza build in `pb_public/`: `index.html`, `app.css`, `app.js` (un'unica IIFE, stile compatto della demo), `sw.js`, `manifest.json`, SDK in `vendor/pocketbase.umd.js` (0.28.1), `vendor/zxing.min.js` (`@zxing/library` 0.21.3, letto al primo uso per i codici a barre).
 - **Hook** in `pb_hooks/off.pb.js` (`--hooksDir`): proxy autenticato verso **Open Food Facts** (`/api/cucinario/off/search?q=`, `/api/cucinario/off/product/<codice>`), perché il motore di ricerca di OFF non accetta chiamate dal browser (CORS) e OFF chiede un User-Agent dell'app. La ricerca a volte risponde 503: il client riprova una volta.
+- **Hook** `pb_hooks/img.pb.js` (+ `img_utils.js`, caricato con `require` perché ogni gestore gira isolato): foto delle ricette da **Wikimedia Commons** (`/api/cucinario/img/search?q=` → 20 miniature; `/api/cucinario/img/file?t=File:…` → l'immagine a 1280 px, autore e licenza nell'header `X-Credit`). Il server scarica solo indirizzi che gli dà Commons. Se per il nome trova meno di 12 foto riprova senza le parole piccole (al, di, in…) e poi con la sola prima parola. Openverse provato e scartato (15–40 s per ricerca); Google/Pexels richiedono una chiave.
 - **Sincronizzazione** (`app.js`, sezione "Stato"): stato `S` in cache su `localStorage`; ogni modifica passa da `setSlot` / `queueSettings` / `queueShop` → coda `outbox` → `upsert` (update, se 404 create con id deterministico). Il realtime e `pull()` aggiornano `S`; `applyPending()` dà precedenza alle modifiche locali non ancora inviate. I campi json viaggiano come testo JSON (`wire`), così una stringa resta stringa.
 - **Collezioni:** `plan` (un record per giorno), `shopping` (uno per settimana), `settings` (record unico), `photos` (una foto per ricetta, 960×600 JPEG; il record si cerca per `recipe`), `recipes`, `ingredients` (catalogo). Regole: solo utenti autenticati. Registrazione pubblica disattivata.
 - **Locale per dispositivo:** `shopMode` (Controllo a casa / Al mercato).
@@ -30,7 +31,7 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 - Frecce o swipe orizzontale per le altre settimane. Toccare la data riporta a oggi.
 - Ogni giorno: **pranzo** e **cena**.
 - **Giorni passati e pasti passati di oggi: opachi**. Il pranzo di oggi diventa "passato" dopo un orario configurabile (default **18:00**), la cena dopo le **23:00**.
-- Ogni ricetta ha una **foto** (illustrazione generata, o foto vera caricata dal telefono).
+- Ogni ricetta ha una **foto**: illustrazione generata, foto caricata dal telefono, oppure **🔍 Cerca foto** (come l'icona dei gruppi di WhatsApp: cerca in rete col nome della ricetta, modificabile; si tocca una foto e diventa quella della ricetta). Sotto le foto prese dalla rete c'è "Foto: autore · licenza · Wikimedia Commons" (`photos.credit`, migrazione `1762675200_photo_credit.js`).
 - Home pulita: nessuna impostazione in fondo alla pagina.
 
 ### Categorie

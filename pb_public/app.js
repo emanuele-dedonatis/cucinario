@@ -195,7 +195,7 @@ function hash36(s){let a=0xdeadbeef,b=0x41c6ce57;for(const c of s){const x=c.cha
   return((b>>>0).toString(36)+(a>>>0).toString(36))}
 const ID={plan:k=>pad15("p"+k),shopping:w=>pad15("w"+w),settings:()=>"settings0000000",photos:r=>pad15("ph"+hash36(r)),ingredients:n=>pad15("i"+hash36(n))};
 const SHOP0=()=>({checks:{},have:{},extra:[],done:{}});
-const defaults=()=>({plan:{},shop:SHOP0(),photos:{},recipes:{},ingr:{},cats:{},types:{},shopMode:"casa",schedule:DEF_SCHED,
+const defaults=()=>({plan:{},shop:SHOP0(),photos:{},credits:{},recipes:{},ingr:{},cats:{},types:{},shopMode:"casa",schedule:DEF_SCHED,
   ranges:{c:[45,60],p:[15,25],f:[20,35],fib:8},times:{pranzo:"18:00",cena:"23:00"},people:{a:2,b:1,kid:60}});
 let S=defaults(),outbox=[],netOk=true;
 try{S=Object.assign(defaults(),JSON.parse(localStorage.getItem(CACHE))||{})}catch(e){}
@@ -235,7 +235,7 @@ function applyRec(col,r,del){
   if(col==="plan"){if(del)delete S.plan[r.date];else S.plan[r.date]={pranzo:r.pranzo??null,cena:r.cena??null,kinds:r.kinds||{},people:r.people||{}}}
   else if(col==="shopping"){if(r.week==="lista")S.shop=del?SHOP0():{checks:r.checks||{},have:r.have||{},extra:r.extra||[],done:r.done||{}}} // i vecchi record per settimana non servono più
   else if(col==="settings"){if(!del)for(const f of ["ranges","times","schedule","people"])if(r[f])S[f]=r[f]}
-  else if(col==="photos"){if(del||!r.image)delete S.photos[r.recipe];else S.photos[r.recipe]=pb.files.getURL(r,r.image)}
+  else if(col==="photos"){if(del||!r.image){delete S.photos[r.recipe];delete S.credits[r.recipe]}else{S.photos[r.recipe]=pb.files.getURL(r,r.image);if(r.credit)S.credits[r.recipe]=r.credit;else delete S.credits[r.recipe]}}
   else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,archived:r.archived}}
   else if(col==="ingredients"){if(del)delete S.ingr[r.id];else S.ingr[r.id]={name:r.name,cats:r.cats||[],c:r.c,p:r.p,f:r.f,fib:r.fib,unit_g:r.unit_g}}
   else if(col==="categories"){if(del)delete S.cats[r.id];else S.cats[r.id]={name:r.name,color:r.color,order:r.order,goal:r.goal}}
@@ -254,7 +254,7 @@ function applyPending(){for(const {col,id,data,del} of outbox){
   rebuildRecipes()}
 async function pull(){
   const lists=await Promise.all(COLS.map(c=>pb.collection(c).getFullList({batch:1000})));
-  S.plan={};S.shop=SHOP0();S.photos={};S.recipes={};S.ingr={};S.cats={};S.types={};
+  S.plan={};S.shop=SHOP0();S.photos={};S.credits={};S.recipes={};S.ingr={};S.cats={};S.types={};
   COLS.forEach((c,i)=>lists[i].forEach(r=>applyRec(c,r)));
   applyPending();save();netOk=true;
 }
@@ -632,22 +632,43 @@ function fmtQty(q,u){const n=Math.round(q*10)/10;if(u==="g"&&n>=1000)return(n/10
 // quantità per più persone, da cucinare: grammi interi, pezzi e cucchiai al mezzo
 const scaleQty=(q,u,x)=>(u==="g"||u==="ml")?Math.round(q*x):Math.max(.5,Math.round(q*x*2)/2);
 // pp = persone del pasto (dalla settimana): quantità per loro, con − + per cambiarle; senza pp quantità per una persona
-function recipeHtml(r,pp){const x=pp?pplFactor(pp):1;return photoHtml(r,"hero")+`<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="row">${tagsHtml(r.k)}</span>
-  <label class="btn ghost filebtn" style="padding:6px 12px;font-size:13px">${S.photos[r.id]?"Cambia foto":"Aggiungi foto"}<input type="file" accept="image/*" data-photo="${r.id}"></label></div>
+function recipeHtml(r,pp){const x=pp?pplFactor(pp):1;return photoHtml(r,"hero")+(S.credits[r.id]?`<p class="credit">Foto: ${esc(S.credits[r.id])}</p>`:"")+
+  `<div class="row photobtns"><button class="btn ghost" data-wphoto>🔍 Cerca foto</button><label class="btn ghost filebtn">${S.photos[r.id]?"Cambia foto":"Carica foto"}<input type="file" accept="image/*" data-photo="${r.id}"></label></div>
+  <div class="row" style="margin-bottom:4px">${tagsHtml(r.k)}</div>
   <p class="rmeta">${esc(recMeta(r))}</p>
   ${nutHtml(nutrition(r))}
   ${pp?`<h3 class="shh">Ingredienti <small>per ${esc(pplLbl(pp))}</small></h3>${pplStepHtml(pp)}`:`<h3 class="shh">Ingredienti <small>per una persona</small></h3>`}
   <ul class="ing">${r.i.map(i=>`<li><span>${esc(i[0])}</span><span>${fmtQty(pp?scaleQty(i[1],i[2],x):i[1],i[2])}</span></li>`).join("")}</ul>
   <ol class="steps">${r.s.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`}
-function bindPhoto(after){$("#sheetBody").onchange=e=>{const inp=e.target.closest("[data-photo]");if(!inp||!inp.files[0])return;
-  const id=inp.dataset.photo,fr=new FileReader();
-  fr.onload=()=>{const img=new Image();img.onload=()=>{const W=960,H=600,cv=document.createElement("canvas");cv.width=W;cv.height=H;const sc=Math.max(W/img.width,H/img.height);
-    cv.getContext("2d").drawImage(img,(W-img.width*sc)/2,(H-img.height*sc)/2,img.width*sc,img.height*sc);
-    toast("Carico la foto…");
-    cv.toBlob(async b=>{try{const rec=await uploadPhoto(id,b);S.photos[id]=pb.files.getURL(rec,rec.image);save();renderAll();after();toast("Foto salvata")}
-      catch(err){toast(err.status?"Foto non salvata":"Serve la connessione per caricare la foto")}},"image/jpeg",0.8)};img.src=fr.result};
-  fr.readAsDataURL(inp.files[0])}}
-async function uploadPhoto(recipe,blob){const fd=new FormData();fd.append("recipe",recipe);fd.append("image",blob,recipe+".jpg");
+// foto della ricetta: ritagliata al centro a 960×600 e caricata; credit = autore · licenza · fonte per le foto dalla rete
+function crop(blob){return new Promise((ok,ko)=>{const u=URL.createObjectURL(blob),img=new Image();
+  img.onload=()=>{URL.revokeObjectURL(u);const W=960,H=600,cv=document.createElement("canvas");cv.width=W;cv.height=H;const sc=Math.max(W/img.width,H/img.height);
+    cv.getContext("2d").drawImage(img,(W-img.width*sc)/2,(H-img.height*sc)/2,img.width*sc,img.height*sc);cv.toBlob(b=>b?ok(b):ko(new Error("foto")),"image/jpeg",0.8)};
+  img.onerror=()=>{URL.revokeObjectURL(u);ko(new Error("foto"))};img.src=u})}
+async function savePhoto(id,blob,credit){toast("Carico la foto…");
+  try{const rec=await uploadPhoto(id,await crop(blob),credit);S.photos[id]=pb.files.getURL(rec,rec.image);if(credit)S.credits[id]=credit;else delete S.credits[id];save();renderAll();toast("Foto salvata");return true}
+  catch(err){toast(err.status?"Foto non salvata":err.message==="foto"?"Questa foto non si apre":"Serve la connessione per caricare la foto");return false}}
+function bindPhoto(after){$("#sheetBody").onchange=async e=>{const inp=e.target.closest("[data-photo]");if(!inp||!inp.files[0])return;if(await savePhoto(inp.dataset.photo,inp.files[0],""))after()}}
+// come l'icona dei gruppi di WhatsApp: foto dalla rete cercate col nome della ricetta (Wikimedia Commons, tramite il nostro server)
+function openPhotoSearch(id,back){const r=byId[id];let q=r.n,res=[];
+  openSheet(`Cerca foto<small>${esc(r.n)}</small>`,`<form class="xadd" id="wsForm"><input class="txt" id="wsQ" type="search" value="${esc(q)}" aria-label="Cerca foto" autocomplete="off"><button class="btn">Cerca</button></form>
+    <div id="wsRes"></div><div class="row" style="margin-top:12px"><button class="btn ghost" data-back>Indietro</button></div>`);
+  const box=$("#wsRes");
+  const run=async()=>{q=$("#wsQ").value.trim();if(!q)return;box.innerHTML=`<p class="offmsg">Cerco «${esc(q)}»…</p>`;
+    try{res=(await pb.send("/api/cucinario/img/search",{query:{q}})).images||[]}
+    catch(err){if(box.isConnected)box.innerHTML=`<p class="offmsg warn">${navigator.onLine?"La ricerca delle foto non risponde: riprova tra poco.":"Serve la connessione a internet."}</p>`;return}
+    if(!box.isConnected)return;
+    box.innerHTML=res.length?`<p class="offmsg">Tocca una foto per usarla. Vengono da Wikimedia Commons, con licenza libera: sotto la foto resta il nome dell'autore.</p><div class="wgrid">${res.map((x,i)=>`<button data-wi="${i}" title="${esc(x.title)}"><img src="${esc(x.thumb)}" alt="${esc(x.title)}" loading="lazy" onerror="this.parentNode.hidden=true"></button>`).join("")}</div>`
+      :`<p class="offmsg warn">Nessuna foto per «${esc(q)}». Prova con meno parole (es. solo il piatto principale).</p>`};
+  $("#wsForm").onsubmit=e=>{e.preventDefault();run()};
+  $("#sheetBody").onclick=async e=>{if(e.target.closest("[data-back]")){back();return}
+    const b=e.target.closest("[data-wi]");if(!b||b.disabled)return;const x=res[+b.dataset.wi];
+    box.querySelectorAll("[data-wi]").forEach(y=>y.disabled=true);b.classList.add("loading");toast("Scarico la foto…");
+    let blob=null,credit="";try{const rs=await fetch(`/api/cucinario/img/file?t=${encodeURIComponent(x.id)}`,{headers:{Authorization:pb.authStore.token}});if(rs.ok){blob=await rs.blob();credit=decodeURIComponent(rs.headers.get("X-Credit")||"")}}catch(err){}
+    if(!blob){toast(navigator.onLine?"Questa foto non si scarica: provane un'altra":"Serve la connessione a internet");box.querySelectorAll("[data-wi]").forEach(y=>y.disabled=false);b.classList.remove("loading");return}
+    if(await savePhoto(id,blob,credit||"Wikimedia Commons"))back();else{box.querySelectorAll("[data-wi]").forEach(y=>y.disabled=false);b.classList.remove("loading")}};
+  run()}
+async function uploadPhoto(recipe,blob,credit){const fd=new FormData();fd.append("recipe",recipe);fd.append("image",blob,recipe+".jpg");fd.append("credit",credit||"");
   // le foto caricate prima che le ricette fossero nel database hanno un id diverso da ID.photos: cerco per ricetta
   let cur=null;try{cur=await pb.collection("photos").getFirstListItem(pb.filter("recipe={:r}",{r:recipe}))}catch(err){if(err.status!==404)throw err}
   if(cur)return await pb.collection("photos").update(cur.id,fd);
@@ -659,6 +680,7 @@ function openDetail(k,m){
   const linkBox=sh.length?`<div class="linkbox">${LINK_ICO}<span>Si prepara insieme ${m==="pranzo"?"alla cena di ieri":"al pranzo di domani"}, <b>${esc(p.n)}</b>: in comune ${esc(sh.join(", ").toLowerCase())}.</span></div>`:"";
   openSheet(`${esc(r.n)}<small>${slotLabel(k,m)}</small>`,linkBox+recipeHtml(r,peopleOf(k,m))+`<div class="row"><button class="btn" data-a="change">Cambia ricetta</button><button class="btn ghost" data-a="out">Fuori casa</button><button class="btn ghost" data-a="remove">Togli</button><button class="btn ghost" data-a="edit">Modifica ricetta</button></div>`);
   $("#sheetBody").onclick=e=>{if(e.target.closest("[data-ranges]")){openRanges(()=>openDetail(k,m));return}
+    if(e.target.closest("[data-wphoto]")){openPhotoSearch(r.id,()=>openDetail(k,m));return}
     const ps=e.target.closest("[data-pp]");if(ps){const st=$("#sheetBody").scrollTop;setPeople(k,m,pplStep(peopleOf(k,m),ps));renderAll();openDetail(k,m);$("#sheetBody").scrollTop=st;return}
     const b=e.target.closest("[data-a]");if(!b)return;
     if(b.dataset.a==="change")openPicker(k,m);else if(b.dataset.a==="out")openOut(k,m);else if(b.dataset.a==="edit")openEditor(r.id,()=>openDetail(k,m));
@@ -670,6 +692,7 @@ function openRecipe(id){const r=byId[id];
     `<div class="row"><button class="btn" data-edit>Modifica</button>${r.archived?"":`<button class="btn ghost" data-delete>Elimina</button>`}</div><div id="delBox"></div>`);
   bindPhoto(()=>openRecipe(id));
   $("#sheetBody").onclick=e=>{if(e.target.closest("[data-ranges]")){openRanges(()=>openRecipe(id));return}
+    if(e.target.closest("[data-wphoto]")){openPhotoSearch(id,()=>openRecipe(id));return}
     if(e.target.closest("[data-edit]")){openEditor(id,()=>openRecipe(id));return}
     if(e.target.closest("[data-delete]")){$("#delBox").innerHTML=`<div class="confirm"><p>Eliminare <b>${esc(r.n)}</b>? Non comparirà più tra le ricette né nel riempimento automatico; i pasti già pianificati la mostrano ancora.</p>
       <div class="row"><button class="btn danger" data-confirm>Elimina</button><button class="btn ghost" data-nodel>Annulla</button></div></div>`;$("#delBox").scrollIntoView({block:"nearest",behavior:"smooth"});return}

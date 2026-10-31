@@ -13,6 +13,7 @@ deploy.sh              git pull + rebuild, solo se ci sono novità (adatto a cro
 pb_migrations/         schema del database (applicato in automatico all'avvio)
 pb_public/             l'app: index.html, app.css, app.js, sw.js, manifest, icone, SDK PocketBase, ZXing
 pb_hooks/              off.pb.js: proxy verso Open Food Facts (valori nutrizionali per nome o codice a barre)
+                       img.pb.js, img_utils.js: foto delle ricette cercate su Wikimedia Commons
 ```
 
 ## Prima installazione sulla Raspberry
@@ -94,7 +95,7 @@ Con Docker: `docker compose up --build`, poi <http://127.0.0.1:8091>.
 | `plan` | un giorno: `date`, `pranzo`, `cena` (id ricetta, `{"o":"nota"}` se fuori casa, oppure `null`), `kinds` (tipo cambiato solo per quel giorno), `people` (`{pranzo:[adulti, bambini], cena:[…]}`) | `p` + data, es. `p20261031000000` |
 | `shopping` | la lista della spesa (record unico, `week` = `lista`): `checks` (spunte), `have` (già a casa), `extra` (cose aggiunte a mano, `[{id, n}]`), `done` (pasti già comprati, `{"data|pasto": id ricetta}`); i vecchi record per settimana non si usano più | `wlista000000000` |
 | `settings` | `ranges`, `times`, `schedule` (settimana tipo), `people` (`{a, b, kid}`: adulti e bambini di casa, % di un adulto per un bambino) | `settings0000000` |
-| `photos` | `recipe`, `image` | `ph` + hash dell'id ricetta |
+| `photos` | `recipe`, `image`, `credit` (autore · licenza · fonte, per le foto prese dalla rete) | `ph` + hash dell'id ricetta |
 | `recipes` | `name`, `meals` (pranzo/cena), `types` (id dei tipi), `ingredients` (`[[nome, quantità per una persona adulta, unità]]`, olio compreso), `steps`, `vis`, `archived` | casuale; le 17 di esempio `r` + vecchio id |
 | `ingredients` | `name`, `cats` (id delle categorie), `c`/`p`/`f`/`fib` per 100 g, `unit_g` | `i` + hash del nome |
 | `types` | `name`, `order` (tipi delle ricette: all'inizio Feriale e Festivo) | casuale; iniziali `t` + nome |
