@@ -1,13 +1,13 @@
 (function(){
 /* ---------- Categorie (collezione categories sul server) ----------
    Le crea la famiglia da Impostazioni → Obiettivi settimanali: {name, color (indice della tavolozza --k0…--k9 in app.css),
-   order, goal:{min, max}}. Ogni ingrediente ha una lista di categorie e una ricetta ha quelle dei suoi ingredienti:
-   sono i tag di ricette e ingredienti, i filtri, i reparti della spesa e gli obiettivi della settimana. */
+   order (non più usato: le categorie vanno in ordine alfabetico), goal:{min, max}}. Ogni ingrediente ha una lista di
+   categorie e una ricetta ha quelle dei suoi ingredienti: sono i tag di ricette e ingredienti, i filtri e gli obiettivi della settimana. */
 const NCOL=10;
-let CAT=[],catById={}; // CAT = categorie in ordine
+let CAT=[],catById={}; // CAT = categorie in ordine alfabetico
 const normGoal=g=>({min:(g&&g.min)||0,max:g&&g.max!=null?g.max:null});
 function rebuildCats(){CAT=Object.keys(S.cats).map(id=>({...S.cats[id],id,goal:normGoal(S.cats[id].goal)}))
-  .sort((a,b)=>(a.order||0)-(b.order||0)||a.name.localeCompare(b.name,"it"));catById=Object.fromEntries(CAT.map(c=>[c.id,c]))}
+  .sort((a,b)=>a.name.localeCompare(b.name,"it"));catById=Object.fromEntries(CAT.map(c=>[c.id,c]))}
 const ingCats=x=>((x&&x.cats)||[]).filter(id=>catById[id]);
 // rows = [[nome, quantità, unità]]; look(nome) → ingrediente. Categorie nell'ordine della lista
 function recipeCats(rows,look){look=look||(n=>ING[n]);const s=new Set();for(const [n] of rows)for(const id of ingCats(look(n)))s.add(id);return CAT.filter(c=>s.has(c.id)).map(c=>c.id)}
@@ -268,7 +268,7 @@ async function connect(){
 }
 function renderSync(){const el=document.getElementById("sync");if(!el)return;const n=outbox.length;
   el.hidden=netOk;el.textContent=`Offline${n?` · ${n} ${n===1?"modifica":"modifiche"} da inviare`:" · dati salvati sul telefono"}`}
-let offset=0,tab="week",recFilter=null;
+let offset=0,tab="week",recFilter=new Set(); // filtri dell'elenco Ricette: si combinano (ricette con tutte le categorie scelte)
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -370,7 +370,7 @@ function openCat(id,back){
     else if("nodel" in b.dataset)$("#delBox").innerHTML="";
     else if("confirm" in b.dataset){
       for(const i in S.ingr){const cs=S.ingr[i].cats||[];if(cs.includes(id)){const cats=cs.filter(x=>x!==id);S.ingr[i].cats=cats;queue("ingredients",i,{cats})}}
-      delete S.cats[id];queue("categories",id,null,true);if(recFilter===id)recFilter=null;if(ingFilter===id)ingFilter=null;
+      delete S.cats[id];queue("categories",id,null,true);recFilter.delete(id);if(ingFilter===id)ingFilter=null;
       rebuildRecipes();save();renderAll();toast("Categoria eliminata");back()}
     else if("save" in b.dataset){
       const name=v.name.trim().replace(/\s+/g," ");if(!name)return fail("Manca il nome della categoria.");
@@ -591,7 +591,9 @@ function openSheet(title,html){$("#sheetTitle").innerHTML=title;$("#sheetBody").
 function closeSheet(){$("#sheet").classList.remove("open");$("#scrim").classList.remove("open")}
 $("#scrim").onclick=closeSheet;$("#closeSheet").onclick=closeSheet;
 const slotLabel=(k,m)=>{const d=new Date(k+"T12:00");return `${DAYS[(d.getDay()+6)%7]} ${d.getDate()} ${MONTHS[d.getMonth()]} · ${m}`};
-function filtersHtml(active,all){return [null,...CAT.map(c=>c.id)].map(t=>`<button data-f="${t||""}" aria-pressed="${(t||null)===active}">${t?esc(cname(t)):(all||"Tutte")}</button>`).join("")}
+// active = categoria scelta, oppure un Set di categorie (filtri combinati)
+function filtersHtml(active,all){const on=t=>active instanceof Set?(t?active.has(t):!active.size):(t||null)===active;
+  return [null,...CAT.map(c=>c.id)].map(t=>`<button data-f="${t||""}" aria-pressed="${on(t)}">${t?esc(cname(t)):(all||"Tutte")}</button>`).join("")}
 const cname=id=>catById[id]?catById[id].name:"";
 function cardHtml(r,cur,showBal,extra){const ok=r.dr||!checkBalance(nutrition(r)).length;return `<button class="rcard${cur?" current":""}${r.dr?" draft":""}" data-id="${r.id}">${photoHtml(r)}<span class="rinfo"><span class="rname">${esc(r.n)}</span><span class="row" style="gap:6px">${tagsHtml(r.k)}</span><span class="meta">${esc(recMeta(r))}</span>${extra||""}</span>${showBal&&!ok?`<span class="warnico" title="Da rivedere" aria-label="Da rivedere"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z" fill="currentColor"/><path d="M12 9v5" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17" r="1.4" fill="var(--surface)"/></svg></span>`:""}</button>`}
 
@@ -1057,16 +1059,17 @@ let recMode="rec"; // ricette o catalogo degli ingredienti
 function renderRec(){
   document.querySelectorAll("#recMode button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===recMode));
   $("#recPane").hidden=recMode!=="rec";$("#ingPane").hidden=recMode!=="ing";renderIng();
+  for(const id of recFilter)if(!catById[id])recFilter.delete(id);
   $("#recFilters").innerHTML=filtersHtml(recFilter);
-  if(recFilter&&!catById[recFilter])recFilter=null;
-  const list=R.filter(r=>!recFilter||r.k.includes(recFilter)),drafts=recFilter?[]:DRAFTS;
+  const fs=[...recFilter],list=R.filter(r=>fs.every(id=>r.k.includes(id))),drafts=fs.length?[]:DRAFTS;
   // in cima le ricette in costruzione (non hanno ancora tutto: niente filtri per categoria)
   $("#recList").innerHTML=(drafts.length?`<h3 class="shh">In costruzione</h3>${drafts.map(r=>cardHtml(r,false,false,`<span class="dmiss">${esc(draftMissing(r))}</span>`)).join("")}<h3 class="shh">Ricette</h3>`:"")+
-    (list.length?list.map(r=>cardHtml(r,false,true)).join(""):`<p class="empty-note">Nessuna ricetta${recFilter?` nella categoria ${esc(cname(recFilter).toLowerCase())}`:""}.<br>Aggiungila con «Nuova ricetta».</p>`);
+    (list.length?list.map(r=>cardHtml(r,false,true)).join(""):`<p class="empty-note">Nessuna ricetta${fs.length?` con ${esc(fs.map(id=>cname(id).toLowerCase()).join(", ").replace(/, ([^,]*)$/," e $1"))}`:""}.<br>${fs.length?"Togli qualche filtro, oppure aggiungila":"Aggiungila"} con «Nuova ricetta».</p>`);
 }
 $("#newRec").addEventListener("click",()=>openEditor(null));
 $("#recMode").addEventListener("click",e=>{const b=e.target.closest("[data-mode]");if(!b)return;recMode=b.dataset.mode;renderRec();renderHeader();window.scrollTo(0,0)});
-$("#recFilters").addEventListener("click",e=>{const b=e.target.closest("[data-f]");if(!b)return;recFilter=b.dataset.f||null;renderRec()});
+$("#recFilters").addEventListener("click",e=>{const b=e.target.closest("[data-f]");if(!b)return;const id=b.dataset.f;
+  if(!id)recFilter.clear();else if(recFilter.has(id))recFilter.delete(id);else recFilter.add(id);renderRec()});
 $("#recList").addEventListener("click",e=>{const b=e.target.closest("[data-id]");if(b)openRecipe(b.dataset.id)});
 
 /* ---------- Navigazione ---------- */

@@ -39,6 +39,8 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 Le crea e gestisce la famiglia (Impostazioni → Obiettivi settimanali e categorie): nome, colore, obiettivo. Hanno sostituito "fonte proteica" e "reparto" (novembre 2026); quelle iniziali sono le sette fonti proteiche: lenticchie, fagioli, ceci, pesce, carne, uova, latticini.
 - Un **ingrediente** ha zero o più categorie; una **ricetta** ha tutte le categorie dei suoi ingredienti (non si scelgono sulla ricetta). Es. polpette = carne + uova (+ latticini se il parmigiano è segnato latticini).
 - Le categorie sono: i **tag** di ricette e ingredienti, i **filtri** delle due liste e la base degli **obiettivi settimanali**.
+- Sono sempre in **ordine alfabetico** (impostazioni, filtri, tag, resoconto della settimana); il campo `order` resta nel database ma non si usa.
+- Nell'elenco Ricette i filtri si **combinano**: toccando più categorie restano le ricette che le hanno **tutte** (es. lenticchie e pesce); "Tutte" li toglie. Nel catalogo ingredienti e nel selettore il filtro resta singolo.
 - Eliminare una categoria la toglie da tutti gli ingredienti e ne cancella l'obiettivo.
 
 ### Pasto e tipo
