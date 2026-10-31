@@ -1,0 +1,5 @@
+.git
+pb_data
+deploy.log
+*.md
+deploy.sh
