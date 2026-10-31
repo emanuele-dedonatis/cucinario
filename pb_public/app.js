@@ -186,7 +186,7 @@ let today=new Date(),thisMonday=mondayOf(today);
    settings (unico record: obiettivi, intervalli, orari), photos (una foto per ricetta), recipes, ingredients.
    Le modifiche vanno in una coda locale (outbox) e partono appena c'è rete; vince l'ultima scrittura per campo. */
 const CACHE="cucinario-stato-v1",OUTBOX="cucinario-outbox-v1",COLS=["plan","shopping","settings","photos","recipes","ingredients","categories","types"];
-const JSONF=new Set(["pranzo","cena","checks","have","ranges","times","ingredients","steps","vis","cats","goal","meals","types","kinds","schedule","people"]);
+const JSONF=new Set(["pranzo","cena","checks","have","ranges","times","ingredients","steps","vis","cats","goal","meals","types","kinds","schedule","people","extra"]);
 const pb=new PocketBase(location.origin);pb.autoCancellation(false);
 // id dei record deterministici (15 caratteri a-z0-9), così ogni dispositivo sa quale record aggiornare
 const pad15=s=>(s.replace(/[^a-z0-9]/g,"")+"0".repeat(15)).slice(0,15);
@@ -194,7 +194,7 @@ function hash36(s){let a=0xdeadbeef,b=0x41c6ce57;for(const c of s){const x=c.cha
   a=Math.imul(a^a>>>16,2246822507)^Math.imul(b^b>>>13,3266489909);b=Math.imul(b^b>>>16,2246822507)^Math.imul(a^a>>>13,3266489909);
   return((b>>>0).toString(36)+(a>>>0).toString(36))}
 const ID={plan:k=>pad15("p"+k),shopping:w=>pad15("w"+w),settings:()=>"settings0000000",photos:r=>pad15("ph"+hash36(r)),ingredients:n=>pad15("i"+hash36(n))};
-const defaults=()=>({plan:{},checks:{},have:{},photos:{},recipes:{},ingr:{},cats:{},types:{},shopMode:"casa",schedule:DEF_SCHED,
+const defaults=()=>({plan:{},checks:{},have:{},extra:{},photos:{},recipes:{},ingr:{},cats:{},types:{},shopMode:"casa",schedule:DEF_SCHED,
   ranges:{c:[45,60],p:[15,25],f:[20,35],fib:8},times:{pranzo:"18:00",cena:"23:00"},people:{a:2,b:1,kid:60}});
 let S=defaults(),outbox=[],netOk=true;
 try{S=Object.assign(defaults(),JSON.parse(localStorage.getItem(CACHE))||{})}catch(e){}
@@ -231,7 +231,7 @@ async function flush(){
 // record del server → stato locale
 function applyRec(col,r,del){
   if(col==="plan"){if(del)delete S.plan[r.date];else S.plan[r.date]={pranzo:r.pranzo??null,cena:r.cena??null,kinds:r.kinds||{},people:r.people||{}}}
-  else if(col==="shopping"){if(del){delete S.checks[r.week];delete S.have[r.week]}else{S.checks[r.week]=r.checks||{};S.have[r.week]=r.have||{}}}
+  else if(col==="shopping"){if(del){delete S.checks[r.week];delete S.have[r.week];delete S.extra[r.week]}else{S.checks[r.week]=r.checks||{};S.have[r.week]=r.have||{};S.extra[r.week]=r.extra||[]}}
   else if(col==="settings"){if(!del)for(const f of ["ranges","times","schedule","people"])if(r[f])S[f]=r[f]}
   else if(col==="photos"){if(del||!r.image)delete S.photos[r.recipe];else S.photos[r.recipe]=pb.files.getURL(r,r.image)}
   else if(col==="recipes"){if(del)delete S.recipes[r.id];else S.recipes[r.id]={name:r.name,ingredients:r.ingredients||[],steps:r.steps||[],meals:r.meals||MEALS,types:r.types||[],vis:r.vis,archived:r.archived}}
@@ -243,7 +243,7 @@ function applyRec(col,r,del){
 function applyPending(){for(const {col,id,data,del} of outbox){
   if(del){if(col==="ingredients")delete S.ingr[id];else if(col==="recipes")delete S.recipes[id];else if(col==="categories")delete S.cats[id];else if(col==="types")delete S.types[id]}
   else if(col==="plan"){const p=S.plan[data.date]=S.plan[data.date]||{pranzo:null,cena:null};for(const m of ["pranzo","cena","kinds","people"])if(m in data)p[m]=data[m]}
-  else if(col==="shopping"){for(const f of ["checks","have"])if(f in data)S[f][data.week]=data[f]}
+  else if(col==="shopping"){for(const f of ["checks","have","extra"])if(f in data)S[f][data.week]=data[f]}
   else if(col==="settings")Object.assign(S,data);
   else if(col==="recipes")S.recipes[id]=Object.assign(S.recipes[id]||{},data);
   else if(col==="ingredients")S.ingr[id]=Object.assign(S.ingr[id]||{},data);
@@ -252,7 +252,7 @@ function applyPending(){for(const {col,id,data,del} of outbox){
   rebuildRecipes()}
 async function pull(){
   const lists=await Promise.all(COLS.map(c=>pb.collection(c).getFullList({batch:1000})));
-  S.plan={};S.checks={};S.have={};S.photos={};S.recipes={};S.ingr={};S.cats={};S.types={};
+  S.plan={};S.checks={};S.have={};S.extra={};S.photos={};S.recipes={};S.ingr={};S.cats={};S.types={};
   COLS.forEach((c,i)=>lists[i].forEach(r=>applyRec(c,r)));
   applyPending();save();netOk=true;
 }
@@ -905,7 +905,7 @@ $("#ingFilters").addEventListener("click",e=>{const b=e.target.closest("[data-f]
 function shoppingList(){
   const map=new Map();
   weekKeys().forEach(k=>["pranzo","cena"].forEach(m=>{const id=rid(slot(k,m));if(!id)return;const r=byId[id],x=pplFactor(peopleOf(k,m));
-    r.i.forEach(([n,q,u])=>{const kk=n+"|"+u;const e=map.get(kk)||{n,u,c:ingCats(ING[n])[0]||null,q:0,from:new Set()};e.q+=q*x;e.from.add(r.n);map.set(kk,e)})}));
+    r.i.forEach(([n,q,u])=>{const kk=n+"|"+u;const e=map.get(kk)||{n,u,q:0,from:new Set()};e.q+=q*x;e.from.add(r.n);map.set(kk,e)})}));
   // grammi interi; pezzi, mazzi, cucchiai… arrotondati per eccesso
   return[...map.values()].map(e=>({...e,q:(e.u==="g"||e.u==="ml")?Math.round(e.q):Math.ceil(e.q-1e-6)}));
 }
@@ -916,30 +916,33 @@ const stepOf=(u,q)=>(u==="g"||u==="ml")?(q>=1000?100:50):1;
 const r1=x=>Math.round(x*10)/10;
 let shopItems={};
 function renderShop(){
-  const items=shoppingList(),checks=S.checks[wk()]||{},have=S.have[wk()]||{},casa=S.shopMode==="casa";
+  const w=wk(),items=shoppingList().sort((a,b)=>a.n.localeCompare(b.n,"it")),checks=S.checks[w]||{},have=S.have[w]||{},extra=S.extra[w]||[],casa=S.shopMode==="casa";
   items.forEach(i=>{i.id=i.n+"|"+i.u;i.have=Math.min(have[i.id]||0,i.q);i.buy=r1(i.q-i.have)});
   shopItems=Object.fromEntries(items.map(i=>[i.id,i]));
   const toBuy=items.filter(i=>i.buy>0),atHome=items.filter(i=>i.buy<=0);
-  const done=toBuy.filter(i=>checks[i.id]).length;
+  const done=toBuy.filter(i=>checks[i.id]).length+extra.filter(x=>checks[x.id]).length,all=toBuy.length+extra.length;
   document.querySelectorAll("#shopMode button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===S.shopMode));
-  $("#shopSummary").textContent=!items.length?"":casa?`${toBuy.length} da comprare · ${atHome.length} già in casa`:`${toBuy.length} da comprare · ${done} presi`;
+  $("#shopSummary").textContent=!all&&!atHome.length?"":casa?`${toBuy.length} da comprare · ${atHome.length} già in casa${extra.length?` · ${extra.length} in Altro`:""}`:`${all} da comprare · ${done} presi`;
   $("#resetChecks").hidden=casa||!done;
   $("#prog").parentNode.hidden=casa;
-  $("#prog").style.width=toBuy.length?(done/toBuy.length*100)+"%":"0";
-  if(!items.length){$("#shop").innerHTML=`<p class="empty-note">Nessun pasto in questa settimana.<br>Aggiungi qualche ricetta e la lista si compone da sola.</p>`;return}
-  // raggruppo per la prima categoria dell'ingrediente (in ordine), gli altri in fondo
-  const byCat=(list,fn)=>{const gs=[...CAT.map(c=>c.id),null].map(c=>[c,list.filter(i=>(catById[i.c]?i.c:null)===c).sort((a,b)=>a.n.localeCompare(b.n,"it"))]).filter(g=>g[1].length);
-    return gs.map(([c,its])=>`<div class="cat">${gs.length>1?`<h3>${c?esc(cname(c)):"Altro"}</h3>`:""}<div class="items">${fn(its)}</div></div>`).join("")};
+  $("#prog").style.width=all?(done/all*100)+"%":"0";
+  // in fondo le cose che non vengono dalle ricette: si aggiungono e si tolgono a mano
+  const addHtml=`<form class="xadd" id="xadd"><input class="txt" id="xNew" maxlength="60" placeholder="Es. detersivo, pane, caffè" aria-label="Aggiungi alla spesa" autocomplete="off"><button class="btn">Aggiungi</button></form>`;
+  const check=(id,name,sub,qty)=>{const ok=!!checks[id];return `<div class="item${ok?" done":""}"><button class="rowtap" data-check="${esc(id)}"><span class="box">${ok?"✓":""}</span><span class="iname"><b>${esc(name)}</b>${sub?`<small>${esc(sub)}</small>`:""}</span>${qty?`<span class="qty">${qty}</span>`:""}</button></div>`};
+  const noMeals=`<p class="empty-note">Nessun pasto in questa settimana.<br>Aggiungi qualche ricetta e la lista si compone da sola.</p>`;
   if(casa){
     // controllo dispensa: − e + regolano direttamente quanto comprare
-    $("#shop").innerHTML=`<p class="shopnote">Con − togli quello che hai già. Tocca il nome se ce l'hai tutto.</p>`+
-     byCat(items,its=>its.map(i=>{const home=i.buy<=0;return `<div class="item${home?" home":""}">
+    $("#shop").innerHTML=(items.length?`<p class="shopnote">Con − togli quello che hai già. Tocca il nome se ce l'hai tutto.</p><div class="items">`+
+      items.map(i=>{const home=i.buy<=0;return `<div class="item${home?" home":""}">
        <button class="rowtap" data-home="${esc(i.id)}"><span class="iname"><b>${esc(i.n)}</b><small>${i.have>0?`serve ${fmtQty(i.q,i.u)} · a casa ${fmtQty(i.have,i.u)}`:`serve ${fmtQty(i.q,i.u)}`}</small></span></button>
-       <div class="qstep"><button data-dec="${esc(i.id)}" aria-label="Compra meno ${esc(i.n)}" ${home?"disabled":""}>−</button><span class="qv">${home?"a casa":fmtQty(i.buy,i.u)}</span><button data-inc="${esc(i.id)}" aria-label="Compra più ${esc(i.n)}" ${i.have<=0?"disabled":""}>+</button></div></div>`}).join(""));
+       <div class="qstep"><button data-dec="${esc(i.id)}" aria-label="Compra meno ${esc(i.n)}" ${home?"disabled":""}>−</button><span class="qv">${home?"a casa":fmtQty(i.buy,i.u)}</span><button data-inc="${esc(i.id)}" aria-label="Compra più ${esc(i.n)}" ${i.have<=0?"disabled":""}>+</button></div></div>`}).join("")+`</div>`:noMeals)+
+     `<h3 class="shh">Altro</h3><p class="shopnote">Cose che non vengono dalle ricette.</p>`+
+     (extra.length?`<div class="items">${extra.map(x=>`<div class="item"><span class="iname"><b>${esc(x.n)}</b></span><button class="iconbtn xdel" data-xdel="${esc(x.id)}" aria-label="Togli ${esc(x.n)}">✕</button></div>`).join("")}</div>`:"")+addHtml;
   }else{
-    $("#shop").innerHTML=byCat(toBuy,its=>{its.sort((a,b)=>(!!checks[a.id])-(!!checks[b.id]));return its.map(i=>{const ok=!!checks[i.id];
-       return `<div class="item${ok?" done":""}"><button class="rowtap" data-check="${esc(i.id)}"><span class="box">${ok?"✓":""}</span><span class="iname"><b>${esc(i.n)}</b><small>${esc([...i.from].join(", "))}</small></span><span class="qty">${fmtQty(i.buy,i.u)}</span></button></div>`}).join("")})+
-     (atHome.length?`<p class="shopnote">Già in casa: ${esc(atHome.map(i=>i.n).sort((a,b)=>a.localeCompare(b,"it")).join(", "))}</p>`:"");
+    const byDone=(a,b)=>(!!checks[a.id])-(!!checks[b.id]);
+    $("#shop").innerHTML=(toBuy.length?`<div class="items">${toBuy.sort(byDone).map(i=>check(i.id,i.n,[...i.from].join(", "),fmtQty(i.buy,i.u))).join("")}</div>`:items.length?"":noMeals)+
+     `<h3 class="shh">Altro</h3>`+(extra.length?`<div class="items">${[...extra].sort(byDone).map(x=>check(x.id,x.n)).join("")}</div>`:"")+addHtml+
+     (atHome.length?`<p class="shopnote" style="margin-top:14px">Già in casa: ${esc(atHome.map(i=>i.n).join(", "))}</p>`:"");
   }
 }
 function setHave(id,v){const it=shopItems[id];if(!it)return;const x=Math.max(0,Math.min(it.q,r1(v)));const H=haveOf();if(x)H[id]=x;else delete H[id];save();queueShop(wk(),"have");renderShop()}
@@ -947,7 +950,10 @@ $("#shop").addEventListener("click",e=>{
   const dec=e.target.closest("[data-dec]");if(dec){const it=shopItems[dec.dataset.dec];setHave(it.id,it.have+stepOf(it.u,it.q));return}
   const inc=e.target.closest("[data-inc]");if(inc){const it=shopItems[inc.dataset.inc];setHave(it.id,it.have-stepOf(it.u,it.q));return}
   const h=e.target.closest("[data-home]");if(h){const it=shopItems[h.dataset.home];setHave(it.id,it.buy>0?it.q:0);return}
+  const x=e.target.closest("[data-xdel]");if(x){const w=wk();S.extra[w]=(S.extra[w]||[]).filter(i=>i.id!==x.dataset.xdel);if(S.checks[w])delete S.checks[w][x.dataset.xdel];save();queueShop(w,"extra");renderShop();return}
   const b=e.target.closest("[data-check]");if(!b)return;const w=wk();S.checks[w]=S.checks[w]||{};const id=b.dataset.check;S.checks[w][id]=!S.checks[w][id];save();queueShop(w,"checks");renderShop()});
+$("#shop").addEventListener("submit",e=>{e.preventDefault();const inp=$("#xNew"),n=inp.value.trim().replace(/\s+/g," ");if(!n)return;
+  const w=wk();S.extra[w]=[...(S.extra[w]||[]),{id:"x"+randId(),n}];save();queueShop(w,"extra");renderShop();$("#xNew").focus()});
 $("#resetChecks").onclick=()=>{S.checks[wk()]={};save();queueShop(wk(),"checks");renderShop();toast("Spunte azzerate")};
 $("#shopMode").addEventListener("click",e=>{const b=e.target.closest("[data-mode]");if(!b)return;S.shopMode=b.dataset.mode;save();renderShop();window.scrollTo(0,0)});
 

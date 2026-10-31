@@ -36,7 +36,7 @@ Plan to Eat, AnyList, Paprika, RecipeSage e altre non gestiscono i **vincoli set
 ### Categorie
 Le crea e gestisce la famiglia (Impostazioni → Obiettivi settimanali e categorie): nome, colore, obiettivo. Hanno sostituito "fonte proteica" e "reparto" (novembre 2026); quelle iniziali sono le sette fonti proteiche: lenticchie, fagioli, ceci, pesce, carne, uova, latticini.
 - Un **ingrediente** ha zero o più categorie; una **ricetta** ha tutte le categorie dei suoi ingredienti (non si scelgono sulla ricetta). Es. polpette = carne + uova (+ latticini se il parmigiano è segnato latticini).
-- Le categorie sono: i **tag** di ricette e ingredienti, i **filtri** delle due liste, i **gruppi della lista della spesa** e la base degli **obiettivi settimanali**.
+- Le categorie sono: i **tag** di ricette e ingredienti, i **filtri** delle due liste e la base degli **obiettivi settimanali**.
 - Eliminare una categoria la toglie da tutti gli ingredienti e ne cancella l'obiettivo.
 
 ### Pasto e tipo
@@ -88,11 +88,12 @@ Le crea e gestisce la famiglia (Impostazioni → Obiettivi settimanali e categor
 - Riempi e Copia usano le persone già scelte per quel pasto (o quelle di casa); Copia porta anche le persone della settimana copiata.
 
 ### Lista della spesa
-- Somma gli ingredienti della settimana visualizzata (per le persone di ogni pasto), raggruppati per categoria (la prima dell'ingrediente, nell'ordine delle categorie; senza categoria in "Altro"); sotto ogni prodotto le ricette che lo usano. I fuori casa non contano.
+- Somma gli ingredienti della settimana visualizzata (per le persone di ogni pasto), in un unico elenco alfabetico (non più per categoria, novembre 2026); al mercato sotto ogni prodotto le ricette che lo usano. I fuori casa non contano.
+- In fondo, **Altro**: cose che non vengono dalle ricette (detersivo, pane…), aggiunte a mano col campo in fondo e tolte con ✕ (in Controllo a casa); al mercato si spuntano come le altre e il campo per aggiungere c'è ancora. `shopping.extra` `[{id, n}]` (migrazione `1762502400_spesa_altro.js`), spunte in `checks` con lo stesso id.
 - Due modalità:
   - **Controllo a casa**: ogni riga ha **− quantità +** per scalare ciò che ho già. Passo: 1 per i pezzi, 50 g (100 g sopra il kg). Toccando il nome = "ce l'ho tutto".
   - **Al mercato**: lista da spuntare con quantità ridotte; barra di avanzamento; presi in fondo; "Già in casa" in una riga in fondo. Deve funzionare **offline**.
-- Quantità "a casa" e spunte valgono per la settimana visualizzata.
+- Quantità "a casa", spunte e cose in Altro valgono per la settimana visualizzata.
 
 ### Ricette e ingredienti: creare, modificare, eliminare
 - Scheda Ricette → **＋ Nuova ricetta**; dal dettaglio di una ricetta (anche dal pasto in settimana) → **Modifica** / **Elimina**.

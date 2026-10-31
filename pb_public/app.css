@@ -158,8 +158,6 @@ main .wrap{padding-block:12px 110px}
 .sh-head p{margin:0;color:var(--muted);font-size:13.5px}
 .progress{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin-bottom:14px}
 .progress span{display:block;height:100%;background:var(--accent);transition:width .25s}
-.cat{margin-bottom:16px}
-.cat h3{font-family:var(--f-display);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 6px}
 .items{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .item{display:flex;align-items:center;gap:10px;padding:10px 12px;min-width:0;box-sizing:border-box;border-top:1px solid var(--line);width:100%;text-align:left}
 .item:first-child{border-top:0}
@@ -356,3 +354,8 @@ select.txt.changed{border-color:var(--today)}
 .pplf .qv{min-width:40px}
 .shh small{font-family:var(--f-body);text-transform:none;letter-spacing:0;font-size:13px;margin-left:4px}
 .pplnote{font-size:11.5px;font-weight:600;color:var(--muted);padding:0 2px;line-height:1.2}
+
+/* spesa: Altro, cose aggiunte a mano */
+.xadd{display:flex;gap:8px;margin-top:8px}
+.xadd .txt{flex:1;min-width:0}
+.item .xdel{width:32px;height:32px;font-size:14px}
