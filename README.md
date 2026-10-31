@@ -91,11 +91,11 @@ Con Docker: `docker compose up --build`, poi <http://127.0.0.1:8091>.
 
 | Collezione | Contenuto | Id del record |
 |---|---|---|
-| `plan` | un giorno: `date`, `pranzo`, `cena` (id ricetta, `{"o":"nota"}` se fuori casa, oppure `null`), `kinds` (tipo cambiato solo per quel giorno) | `p` + data, es. `p20261031000000` |
+| `plan` | un giorno: `date`, `pranzo`, `cena` (id ricetta, `{"o":"nota"}` se fuori casa, oppure `null`), `kinds` (tipo cambiato solo per quel giorno), `people` (`{pranzo:[adulti, bambini], cena:[…]}`) | `p` + data, es. `p20261031000000` |
 | `shopping` | una settimana: `week` (lunedì), `checks` (spunte), `have` (già a casa) | `w` + data del lunedì |
-| `settings` | `ranges`, `times`, `schedule` (settimana tipo) | `settings0000000` |
+| `settings` | `ranges`, `times`, `schedule` (settimana tipo), `people` (`{a, b, kid}`: adulti e bambini di casa, % di un adulto per un bambino) | `settings0000000` |
 | `photos` | `recipe`, `image` | `ph` + hash dell'id ricetta |
-| `recipes` | `name`, `meals` (pranzo/cena), `types` (id dei tipi), `ingredients` (`[[nome, quantità, unità]]`, olio compreso), `steps`, `vis`, `archived` | casuale; le 17 di esempio `r` + vecchio id |
+| `recipes` | `name`, `meals` (pranzo/cena), `types` (id dei tipi), `ingredients` (`[[nome, quantità per una persona adulta, unità]]`, olio compreso), `steps`, `vis`, `archived` | casuale; le 17 di esempio `r` + vecchio id |
 | `ingredients` | `name`, `cats` (id delle categorie), `c`/`p`/`f`/`fib` per 100 g, `unit_g` | `i` + hash del nome |
 | `types` | `name`, `order` (tipi delle ricette: all'inizio Feriale e Festivo) | casuale; iniziali `t` + nome |
 | `categories` | `name`, `color` (0–9), `order`, `goal` (`{min, max}` a settimana) | casuale; le 7 iniziali `k` + nome |
