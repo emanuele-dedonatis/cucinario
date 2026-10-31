@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     ports:
       # solo locale: da fuori si passa dal reverse proxy nginx (repo infra) che fa HTTPS.
-      # 8091 locale; nginx la pubblica in HTTPS sulla porta successiva, 8092 (convenzione del repo infra).
+      # 8091 perché la 8090 è di ChirpStack; nginx (repo infra) la pubblica su https://cucinario.ededona.es
       - "127.0.0.1:8091:8090"
     volumes:
       # database SQLite, foto caricate e backup automatici
